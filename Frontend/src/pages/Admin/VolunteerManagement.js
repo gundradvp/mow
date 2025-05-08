@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import VolunteerService from "../../services/volunteer-service";
 
 // MUI components
 import Typography from "@mui/material/Typography";
@@ -32,6 +32,7 @@ import Stack from "@mui/material/Stack";
 import Divider from "@mui/material/Divider";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import Snackbar from "@mui/material/Snackbar";
 
 // Icons
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
@@ -57,7 +58,13 @@ function VolunteerManagement() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedVolunteer, setSelectedVolunteer] = useState(null);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
   const [formData, setFormData] = useState({
+    userId: "",
     firstName: "",
     lastName: "",
     email: "",
@@ -72,76 +79,24 @@ function VolunteerManagement() {
     notes: "",
   });
 
+  const fetchVolunteers = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const data = await VolunteerService.getAllVolunteers();
+      setVolunteers(data);
+    } catch (err) {
+      console.error("Error fetching volunteers:", err);
+      setError(
+        err.response?.data?.message ||
+          "Failed to load volunteers. Please try again later."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchVolunteers = async () => {
-      try {
-        setLoading(true);
-
-        // In a real app, this would be an API call to your backend
-        // For now, we'll simulate the data with a delay
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        // Mock data for volunteers
-        const mockVolunteers = [
-          {
-            id: 1,
-            firstName: "John",
-            lastName: "Doe",
-            email: "john.doe@example.com",
-            phoneNumber: "555-123-4567",
-            address: "123 Main St",
-            city: "Springfield",
-            state: "IL",
-            zipCode: "62701",
-            isActive: true,
-            registrationDate: "2023-01-15",
-            emergencyContactName: "Jane Doe",
-            emergencyContactPhone: "555-987-6543",
-            notes: "Available on weekdays",
-          },
-          {
-            id: 2,
-            firstName: "Jane",
-            lastName: "Smith",
-            email: "jane.smith@example.com",
-            phoneNumber: "555-234-5678",
-            address: "456 Oak Ave",
-            city: "Springfield",
-            state: "IL",
-            zipCode: "62702",
-            isActive: true,
-            registrationDate: "2023-02-20",
-            emergencyContactName: "John Smith",
-            emergencyContactPhone: "555-876-5432",
-            notes: "Prefers morning shifts",
-          },
-          {
-            id: 3,
-            firstName: "Mike",
-            lastName: "Johnson",
-            email: "mike.johnson@example.com",
-            phoneNumber: "555-345-6789",
-            address: "789 Pine Ln",
-            city: "Springfield",
-            state: "IL",
-            zipCode: "62704",
-            isActive: false,
-            registrationDate: "2023-03-05",
-            emergencyContactName: "Sarah Johnson",
-            emergencyContactPhone: "555-765-4321",
-            notes: "On temporary leave",
-          },
-        ];
-
-        setVolunteers(mockVolunteers);
-      } catch (err) {
-        console.error("Error fetching volunteers:", err);
-        setError("Failed to load volunteers. Please try again later.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchVolunteers();
   }, []);
 
@@ -155,14 +110,28 @@ function VolunteerManagement() {
   };
 
   const handleOpenDialog = (volunteer = null) => {
+    setError("");
     if (volunteer) {
-      // Edit mode - set the form data to the selected volunteer's data
       setSelectedVolunteer(volunteer);
-      setFormData(volunteer);
+      setFormData({
+        userId: volunteer.userId || "",
+        firstName: volunteer.firstName || "",
+        lastName: volunteer.lastName || "",
+        email: volunteer.email || "",
+        phoneNumber: volunteer.phoneNumber || "",
+        address: volunteer.address || "",
+        city: volunteer.city || "",
+        state: volunteer.state || "",
+        zipCode: volunteer.zipCode || "",
+        isActive: volunteer.isActive !== undefined ? volunteer.isActive : true,
+        emergencyContactName: volunteer.emergencyContactName || "",
+        emergencyContactPhone: volunteer.emergencyContactPhone || "",
+        notes: volunteer.notes || "",
+      });
     } else {
-      // Add mode - reset the form
       setSelectedVolunteer(null);
       setFormData({
+        userId: "",
         firstName: "",
         lastName: "",
         email: "",
@@ -183,6 +152,19 @@ function VolunteerManagement() {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedVolunteer(null);
+    setError("");
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
+  const showNotification = (message, severity = "success") => {
+    setSnackbar({
+      open: true,
+      message,
+      severity,
+    });
   };
 
   const handleInputChange = (e) => {
@@ -194,74 +176,147 @@ function VolunteerManagement() {
   };
 
   const handleSaveVolunteer = async () => {
+    // Add specific check for userId when creating a new volunteer
+    if (!selectedVolunteer && !formData.userId) {
+      setError("Please enter the User ID for the new volunteer.");
+      return;
+    }
+    if (!formData.firstName || !formData.lastName || !formData.email) {
+      setError(
+        "Please fill in all required fields: First Name, Last Name, and Email."
+      );
+      return;
+    }
+
+    // Parse userId to integer
+    const userIdInt = parseInt(formData.userId, 10);
+    if (!selectedVolunteer && (isNaN(userIdInt) || userIdInt <= 0)) {
+      setError("Please enter a valid positive User ID for the new volunteer.");
+      return;
+    }
+
+    const volunteerData = {
+      // Use the parsed integer userId only when creating
+      userId: !selectedVolunteer ? userIdInt : undefined, // Send undefined if updating
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email,
+      phoneNumber: formData.phoneNumber,
+      address: formData.address,
+      city: formData.city,
+      state: formData.state,
+      zipCode: formData.zipCode,
+      isActive: formData.isActive,
+      emergencyContactName: formData.emergencyContactName,
+      emergencyContactPhone: formData.emergencyContactPhone,
+      notes: formData.notes,
+    };
+
     try {
-      // Validate required fields
-      if (!formData.firstName || !formData.lastName || !formData.email) {
-        alert(
-          "Please fill in all required fields: First Name, Last Name, and Email."
-        );
-        return;
-      }
-
+      setError("");
       if (selectedVolunteer) {
-        // Update existing volunteer
-        const updatedVolunteers = volunteers.map((v) =>
-          v.id === selectedVolunteer.id
-            ? { ...formData, id: selectedVolunteer.id }
-            : v
+        // When updating, don't send userId
+        const { userId, ...updateData } = volunteerData;
+        await VolunteerService.updateVolunteer(
+          selectedVolunteer.id,
+          updateData
         );
-        setVolunteers(updatedVolunteers);
-        // In a real app, you would make an API call to update the volunteer
+        showNotification("Volunteer updated successfully!");
       } else {
-        // Add new volunteer
-        const newId = Math.max(...volunteers.map((v) => v.id), 0) + 1;
-        const newVolunteer = {
-          ...formData,
-          id: newId,
-          registrationDate: new Date().toISOString().split("T")[0],
-        };
-        setVolunteers([...volunteers, newVolunteer]);
-        // In a real app, you would make an API call to create a new volunteer
+        // When creating, send the full data including the parsed userIdInt
+        await VolunteerService.createVolunteer({
+          ...volunteerData,
+          userId: userIdInt,
+        });
+        showNotification("Volunteer added successfully!");
       }
-
       handleCloseDialog();
+      fetchVolunteers();
     } catch (err) {
       console.error("Error saving volunteer:", err);
-      alert("Failed to save the volunteer. Please try again.");
+      let errorMsg = "Failed to save the volunteer. Please check console.";
+      if (err.response?.data?.errors) {
+        const errors = err.response.data.errors;
+        const fieldErrors = Object.keys(errors)
+          .map((key) => `${key}: ${errors[key].join(", ")}`)
+          .join("\n");
+        errorMsg = `Validation failed:\n${fieldErrors}`;
+      } else {
+        errorMsg =
+          err.response?.data?.title || err.response?.data?.message || errorMsg;
+      }
+      setError(errorMsg);
     }
   };
 
   const handleToggleStatus = async (volunteer) => {
+    const newStatus = !volunteer.isActive;
+    const action = newStatus ? "activate" : "deactivate";
+    if (
+      !window.confirm(
+        `Are you sure you want to ${action} ${volunteer.firstName} ${volunteer.lastName}?`
+      )
+    ) {
+      return;
+    }
+
+    const volunteerData = {
+      userId: volunteer.userId,
+      firstName: volunteer.firstName,
+      lastName: volunteer.lastName,
+      email: volunteer.email,
+      phoneNumber: volunteer.phoneNumber,
+      address: volunteer.address,
+      city: volunteer.city,
+      state: volunteer.state,
+      zipCode: volunteer.zipCode,
+      isActive: newStatus,
+      emergencyContactName: volunteer.emergencyContactName,
+      emergencyContactPhone: volunteer.emergencyContactPhone,
+      notes: volunteer.notes,
+    };
+
     try {
-      // Update volunteer status
-      const updatedVolunteers = volunteers.map((v) =>
-        v.id === volunteer.id ? { ...v, isActive: !v.isActive } : v
-      );
-      setVolunteers(updatedVolunteers);
-      // In a real app, you would make an API call to update the volunteer status
+      setError("");
+      await VolunteerService.updateVolunteer(volunteer.id, volunteerData);
+      showNotification(`Volunteer ${action}d successfully!`);
+      fetchVolunteers();
     } catch (err) {
-      console.error("Error toggling volunteer status:", err);
-      alert("Failed to update volunteer status. Please try again.");
+      console.error(`Error ${action}ing volunteer:`, err);
+      const errorMsg =
+        err.response?.data?.message ||
+        `Failed to ${action} volunteer. Please try again.`;
+      setError(errorMsg);
+      showNotification(errorMsg, "error");
     }
   };
 
   const handleDeleteVolunteer = async (volunteer) => {
     if (
       !window.confirm(
-        `Are you sure you want to delete ${volunteer.firstName} ${volunteer.lastName}?`
+        `Are you sure you want to permanently delete ${volunteer.firstName} ${volunteer.lastName}? This might fail if they have scheduled deliveries.`
       )
     ) {
       return;
     }
 
     try {
-      // Remove the volunteer from the list
-      const updatedVolunteers = volunteers.filter((v) => v.id !== volunteer.id);
-      setVolunteers(updatedVolunteers);
-      // In a real app, you would make an API call to delete the volunteer
+      setError("");
+      await VolunteerService.deleteVolunteer(volunteer.id);
+      showNotification("Volunteer deleted successfully!");
+      fetchVolunteers();
     } catch (err) {
       console.error("Error deleting volunteer:", err);
-      alert("Failed to delete the volunteer. Please try again.");
+      let errorMsg =
+        err.response?.data?.message ||
+        "Failed to delete the volunteer. Please try again.";
+      if (err.response?.status === 409) {
+        errorMsg = `Cannot delete volunteer: ${
+          err.response.data.message || "They may have existing schedules."
+        }`;
+      }
+      setError(errorMsg);
+      showNotification(errorMsg, "error");
     }
   };
 
@@ -280,12 +335,14 @@ function VolunteerManagement() {
     );
   }
 
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
-
   return (
     <Box>
+      {error && !openDialog && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
         <Typography variant="h4" gutterBottom>
           Volunteer Management
@@ -316,79 +373,89 @@ function VolunteerManagement() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {volunteers
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((volunteer) => (
-                  <TableRow
-                    hover
-                    role="checkbox"
-                    tabIndex={-1}
-                    key={volunteer.id}
-                  >
-                    <TableCell>{volunteer.id}</TableCell>
-                    <TableCell>{`${volunteer.firstName} ${volunteer.lastName}`}</TableCell>
-                    <TableCell>{volunteer.email}</TableCell>
-                    <TableCell>{volunteer.phoneNumber}</TableCell>
-                    <TableCell>
-                      {volunteer.isActive ? (
-                        <Chip
-                          label="Active"
-                          color="success"
-                          size="small"
-                          icon={<CheckCircleIcon />}
-                        />
-                      ) : (
-                        <Chip
-                          label="Inactive"
-                          color="default"
-                          size="small"
-                          icon={<CancelIcon />}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        justifyContent="center"
-                      >
-                        <Tooltip title="Edit">
-                          <IconButton
-                            color="primary"
+              {volunteers.length === 0 && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} align="center">
+                    No volunteers found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                volunteers
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((volunteer) => (
+                    <TableRow
+                      hover
+                      role="checkbox"
+                      tabIndex={-1}
+                      key={volunteer.id}
+                    >
+                      <TableCell>{volunteer.id}</TableCell>
+                      <TableCell>{`${volunteer.firstName} ${volunteer.lastName}`}</TableCell>
+                      <TableCell>{volunteer.email}</TableCell>
+                      <TableCell>{volunteer.phoneNumber || "N/A"}</TableCell>
+                      <TableCell>
+                        {volunteer.isActive ? (
+                          <Chip
+                            label="Active"
+                            color="success"
                             size="small"
-                            onClick={() => handleOpenDialog(volunteer)}
-                          >
-                            <EditIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip
-                          title={volunteer.isActive ? "Deactivate" : "Activate"}
+                            icon={<CheckCircleIcon />}
+                          />
+                        ) : (
+                          <Chip
+                            label="Inactive"
+                            color="default"
+                            size="small"
+                            icon={<CancelIcon />}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="center"
                         >
-                          <IconButton
-                            color={volunteer.isActive ? "error" : "success"}
-                            size="small"
-                            onClick={() => handleToggleStatus(volunteer)}
+                          <Tooltip title="Edit">
+                            <IconButton
+                              color="primary"
+                              size="small"
+                              onClick={() => handleOpenDialog(volunteer)}
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip
+                            title={
+                              volunteer.isActive ? "Deactivate" : "Activate"
+                            }
                           >
-                            {volunteer.isActive ? (
-                              <CancelIcon />
-                            ) : (
-                              <CheckCircleIcon />
-                            )}
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton
-                            color="error"
-                            size="small"
-                            onClick={() => handleDeleteVolunteer(volunteer)}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            <IconButton
+                              color={volunteer.isActive ? "error" : "success"}
+                              size="small"
+                              onClick={() => handleToggleStatus(volunteer)}
+                            >
+                              {volunteer.isActive ? (
+                                <CancelIcon />
+                              ) : (
+                                <CheckCircleIcon />
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              color="error"
+                              size="small"
+                              onClick={() => handleDeleteVolunteer(volunteer)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -403,7 +470,6 @@ function VolunteerManagement() {
         />
       </Paper>
 
-      {/* Dialog for Adding/Editing Volunteers */}
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
@@ -414,11 +480,34 @@ function VolunteerManagement() {
           {selectedVolunteer ? "Edit Volunteer" : "Add New Volunteer"}
         </DialogTitle>
         <DialogContent>
-          <Box component="form" sx={{ mt: 2 }}>
+          {error && openDialog && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Box component="form" noValidate sx={{ mt: 2 }}>
             <Typography variant="subtitle1" gutterBottom>
               Personal Information
             </Typography>
             <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  required={!selectedVolunteer}
+                  fullWidth
+                  name="userId"
+                  label="User ID"
+                  type="number"
+                  value={formData.userId}
+                  onChange={handleInputChange}
+                  disabled={!!selectedVolunteer}
+                  helperText={
+                    selectedVolunteer
+                      ? "User ID cannot be changed."
+                      : "Enter the existing User ID for this volunteer."
+                  }
+                  InputProps={{ inputProps: { min: 1 } }}
+                />
+              </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
                   required
@@ -508,7 +597,6 @@ function VolunteerManagement() {
                     <MenuItem value="ID">Idaho</MenuItem>
                     <MenuItem value="IL">Illinois</MenuItem>
                     <MenuItem value="IN">Indiana</MenuItem>
-                    {/* Add all states here */}
                   </Select>
                 </FormControl>
               </Grid>
@@ -585,10 +673,24 @@ function VolunteerManagement() {
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSaveVolunteer} variant="contained">
-            Save
+            {selectedVolunteer ? "Update Volunteer" : "Add Volunteer"}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

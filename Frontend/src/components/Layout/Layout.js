@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { AuthContext } from "../../contexts/AuthContext";
 
@@ -21,6 +21,8 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tooltip from "@mui/material/Tooltip";
 import Badge from "@mui/material/Badge";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 
 // Icons
 import MenuIcon from "@mui/icons-material/Menu";
@@ -41,8 +43,16 @@ function Layout() {
   const { currentUser, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
-  const [open, setOpen] = useState(true);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [open, setOpen] = useState(!isMobile);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorElUser, setAnchorElUser] = useState(null);
+
+  // Update drawer state when screen size changes
+  useEffect(() => {
+    setOpen(!isMobile);
+  }, [isMobile]);
 
   // Menu handling
   const handleOpenUserMenu = (event) => {
@@ -55,12 +65,19 @@ function Layout() {
 
   // Drawer handling
   const toggleDrawer = () => {
-    setOpen(!open);
+    if (isMobile) {
+      setMobileOpen(!mobileOpen);
+    } else {
+      setOpen(!open);
+    }
   };
 
   // Navigation handling
   const navigateTo = (path) => {
     navigate(path);
+    if (isMobile) {
+      setMobileOpen(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -78,7 +95,7 @@ function Layout() {
       {
         text: "Dashboard",
         icon: <DashboardIcon />,
-        path: "/dashboard",
+        path: currentUser?.role === "Volunteer" ? "/volunteer-dashboard" : "/dashboard",
         roles: ["Admin", "Coordinator", "Volunteer"],
       },
       {
@@ -116,17 +133,114 @@ function Layout() {
       );
     }
 
+    // Add volunteer-specific items
+    if (currentUser && currentUser.role === "Volunteer") {
+      items.push(
+        {
+          text: "Routes",
+          icon: <RouteIcon />,
+          path: "/volunteer-routes",
+          roles: ["Volunteer"],
+        }
+      );
+    }
+
     // Filter items based on user role
     return currentUser
       ? items.filter((item) => item.roles.includes(currentUser.role))
       : [];
   };
 
+  // Determine if we should hide the drawer for volunteer dashboard on mobile
+  const isVolunteerDashboardOnMobile = () => {
+    return (
+      currentUser?.role === "Volunteer" && 
+      location.pathname === "/volunteer-dashboard" && 
+      isMobile
+    );
+  };
+
+  // Drawer content
+  const drawerContent = (
+    <>
+      <Toolbar 
+        sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'flex-end', 
+          px: [1],
+          minHeight: (theme) => theme.spacing(7)
+        }}
+      >
+        <IconButton onClick={toggleDrawer}>
+          <ChevronLeftIcon />
+        </IconButton>
+      </Toolbar>
+      <Divider />
+      <List>
+        {getNavigationItems().map((item) => (
+          <ListItem
+            key={item.text}
+            disablePadding
+            sx={{
+              display: "block",
+              backgroundColor:
+                location.pathname === item.path
+                  ? "rgba(0, 0, 0, 0.08)"
+                  : "transparent",
+            }}
+          >
+            <ListItemButton
+              onClick={() => navigateTo(item.path)}
+              sx={{
+                minHeight: 48,
+                justifyContent: open ? "initial" : "center",
+                px: 2.5,
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  minWidth: 0,
+                  mr: open ? 3 : "auto",
+                  justifyContent: "center",
+                  color:
+                    location.pathname === item.path
+                      ? "primary.main"
+                      : "inherit",
+                }}
+              >
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText
+                primary={item.text}
+                sx={{
+                  opacity: open ? 1 : 0,
+                  display: { xs: mobileOpen ? 'block' : 'none', sm: open ? 'block' : 'none' },
+                  color:
+                    location.pathname === item.path
+                      ? "primary.main"
+                      : "inherit",
+                }}
+              />
+            </ListItemButton>
+          </ListItem>
+        ))}
+      </List>
+    </>
+  );
+
+  // Don't render layout elements if we're on volunteer dashboard on mobile
+  if (isVolunteerDashboardOnMobile()) {
+    return <Outlet />;
+  }
+
   return (
     <Box sx={{ display: "flex" }}>
       <AppBar
         position="fixed"
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
+        sx={{ 
+          zIndex: (theme) => theme.zIndex.drawer + 1 
+        }}
       >
         <Toolbar>
           <IconButton
@@ -197,81 +311,60 @@ function Layout() {
         </Toolbar>
       </AppBar>
 
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: {
-            width: drawerWidth,
-            boxSizing: "border-box",
-            ...(!open && {
-              width: (theme) => theme.spacing(7),
+      {/* Mobile drawer */}
+      {isMobile && (
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{
+            keepMounted: true, // Better mobile performance
+          }}
+          sx={{
+            display: { xs: 'block', sm: 'none' },
+            '& .MuiDrawer-paper': { 
+              boxSizing: 'border-box', 
+              width: drawerWidth 
+            },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
+      )}
+
+      {/* Desktop drawer */}
+      {!isMobile && (
+        <Drawer
+          variant="permanent"
+          sx={{
+            display: { xs: 'none', sm: 'block' },
+            width: open ? drawerWidth : theme.spacing(7),
+            flexShrink: 0,
+            [`& .MuiDrawer-paper`]: {
+              width: open ? drawerWidth : theme.spacing(7),
+              boxSizing: "border-box",
               overflowX: "hidden",
-            }),
-            transition: (theme) =>
-              theme.transitions.create("width", {
+              transition: theme.transitions.create("width", {
                 easing: theme.transitions.easing.sharp,
                 duration: theme.transitions.duration.enteringScreen,
               }),
-          },
-        }}
-        open={open}
-      >
-        <Toolbar />
-        <Box sx={{ overflow: "auto" }}>
-          <List>
-            {getNavigationItems().map((item) => (
-              <ListItem
-                key={item.text}
-                disablePadding
-                sx={{
-                  display: "block",
-                  backgroundColor:
-                    location.pathname === item.path
-                      ? "rgba(0, 0, 0, 0.08)"
-                      : "transparent",
-                }}
-              >
-                <ListItemButton
-                  onClick={() => navigateTo(item.path)}
-                  sx={{
-                    minHeight: 48,
-                    justifyContent: open ? "initial" : "center",
-                    px: 2.5,
-                  }}
-                >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 0,
-                      mr: open ? 3 : "auto",
-                      justifyContent: "center",
-                      color:
-                        location.pathname === item.path
-                          ? "primary.main"
-                          : "inherit",
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.text}
-                    sx={{
-                      opacity: open ? 1 : 0,
-                      color:
-                        location.pathname === item.path
-                          ? "primary.main"
-                          : "inherit",
-                    }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-      </Drawer>
+            },
+          }}
+          open={open}
+        >
+          {drawerContent}
+        </Drawer>
+      )}
 
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+      <Box 
+        component="main" 
+        sx={{ 
+          flexGrow: 1, 
+          p: 3,
+          mt: { xs: 7, sm: 8 },
+          width: '100%'
+        }}
+      >
         <Toolbar />
         <Container maxWidth="xl">
           <Outlet />

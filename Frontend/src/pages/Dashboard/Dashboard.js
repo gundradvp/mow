@@ -116,29 +116,7 @@ function Dashboard() {
       } catch (err) {
         console.error("Error fetching dashboard data:", err);
 
-        // Fallback to mock data if API calls fail
-        if (
-          currentUser.role === "Admin" ||
-          currentUser.role === "Coordinator"
-        ) {
-          setStats({
-            volunteers: 45,
-            clients: 120,
-            routes: 12,
-            scheduledDeliveries: 78,
-            completedDeliveries: 65,
-            upcomingDeliveries: 13,
-          });
-        } else {
-          setStats({
-            totalDeliveries: 24,
-            upcomingDeliveries: 3,
-            completedDeliveries: 21,
-            nextDeliveryDate: "2023-05-01",
-          });
-        }
-
-        setError("Using fallback data. Could not connect to the server.");
+        setError("Could not connect to the server. Please try again later.");
       } finally {
         setLoading(false);
       }

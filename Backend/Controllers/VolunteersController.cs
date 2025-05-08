@@ -42,13 +42,22 @@ namespace MOWScheduler.Controllers
                 return NotFound();
             }
 
-            return volunteer;
+            return Ok(volunteer);
         }
 
         // POST: api/Volunteers
         [HttpPost]
         public async Task<ActionResult<Volunteer>> CreateVolunteer(Volunteer volunteer)
         {
+            // Check if the provided UserId exists in the Users table
+            var userExists = await _context.Users.AnyAsync(u => u.Id == volunteer.UserId);
+            if (!userExists)
+            {
+                // Return a BadRequest if the user does not exist
+                ModelState.AddModelError(nameof(volunteer.UserId), $"User with ID {volunteer.UserId} does not exist.");
+                return BadRequest(ModelState);
+            }
+
             _context.Volunteers.Add(volunteer);
             await _context.SaveChangesAsync();
 
@@ -148,6 +157,44 @@ namespace MOWScheduler.Controllers
             }
             
             return volunteer;
+        }
+
+        // POST: api/Volunteers/{id}/assign-shift
+        [HttpPost("{id}/assign-shift")]
+        public async Task<IActionResult> AssignShiftToVolunteer(int id, [FromBody] int shiftId)
+        {
+            var volunteer = await _context.Volunteers.Include(v => v.AssignedShifts).FirstOrDefaultAsync(v => v.Id == id);
+            if (volunteer == null)
+            {
+                return NotFound();
+            }
+
+            var shift = await _context.Shifts.FindAsync(shiftId);
+            if (shift == null)
+            {
+                return NotFound();
+            }
+
+            volunteer.AssignedShifts.Add(shift);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        // PUT: api/Volunteers/{id}/update-availability
+        [HttpPut("{id}/update-availability")]
+        public async Task<IActionResult> UpdateVolunteerAvailability(int id, [FromBody] string availability)
+        {
+            var volunteer = await _context.Volunteers.FindAsync(id);
+            if (volunteer == null)
+            {
+                return NotFound();
+            }
+
+            volunteer.Availability = availability;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
 
         private bool VolunteerExists(int id)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import ClientService from "../../services/client-service";
+import DeliveryRoutesService from "../../services/delivery-routes-service";
 
 // MUI components
 import Typography from "@mui/material/Typography";
@@ -32,6 +33,7 @@ import Stack from "@mui/material/Stack";
 import Divider from "@mui/material/Divider";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import Snackbar from "@mui/material/Snackbar";
 
 // Icons
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
@@ -60,6 +62,11 @@ function ClientManagement() {
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [routes, setRoutes] = useState([]);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -71,89 +78,32 @@ function ClientManagement() {
     isActive: true,
     emergencyContactName: "",
     emergencyContactPhone: "",
-    dietaryRestrictions: "",
+    dietaryRestrictionIds: [],
+    eligibilityCriteriaIds: [],
     medicalNotes: "",
     deliveryInstructions: "",
-    routeId: "",
+    routeId: null,
   });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError("");
 
-        // In a real app, these would be API calls to your backend
-        // For now, we'll simulate the data with a delay
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const [clientsData, routesData] = await Promise.all([
+          ClientService.getAllClients(),
+          DeliveryRoutesService.getAllRoutes(),
+        ]);
 
-        // Mock data for clients
-        const mockClients = [
-          {
-            id: 1,
-            firstName: "Alice",
-            lastName: "Johnson",
-            phoneNumber: "555-123-7890",
-            address: "123 Elm St",
-            city: "Springfield",
-            state: "IL",
-            zipCode: "62701",
-            isActive: true,
-            emergencyContactName: "Bob Johnson",
-            emergencyContactPhone: "555-987-6541",
-            dietaryRestrictions: "Gluten-free",
-            medicalNotes: "Diabetes",
-            deliveryInstructions: "Leave at front door",
-            routeId: 1,
-          },
-          {
-            id: 2,
-            firstName: "Robert",
-            lastName: "Williams",
-            phoneNumber: "555-234-5678",
-            address: "456 Maple Ave",
-            city: "Springfield",
-            state: "IL",
-            zipCode: "62702",
-            isActive: true,
-            emergencyContactName: "Mary Williams",
-            emergencyContactPhone: "555-876-5430",
-            dietaryRestrictions: "Low sodium",
-            medicalNotes: "Heart condition",
-            deliveryInstructions: "Ring doorbell",
-            routeId: 2,
-          },
-          {
-            id: 3,
-            firstName: "Carol",
-            lastName: "Miller",
-            phoneNumber: "555-345-6789",
-            address: "789 Oak Blvd",
-            city: "Springfield",
-            state: "IL",
-            zipCode: "62704",
-            isActive: false,
-            emergencyContactName: "David Miller",
-            emergencyContactPhone: "555-765-4320",
-            dietaryRestrictions: "Vegetarian",
-            medicalNotes: "Allergic to peanuts",
-            deliveryInstructions: "Enter through side gate",
-            routeId: 3,
-          },
-        ];
-
-        // Mock data for routes
-        const mockRoutes = [
-          { id: 1, name: "Route A" },
-          { id: 2, name: "Route B" },
-          { id: 3, name: "Route C" },
-          { id: 4, name: "Route D" },
-        ];
-
-        setClients(mockClients);
-        setRoutes(mockRoutes);
+        setClients(clientsData);
+        setRoutes(routesData.filter((r) => r.isActive));
       } catch (err) {
         console.error("Error fetching data:", err);
-        setError("Failed to load data. Please try again later.");
+        setError(
+          err.response?.data?.message ||
+            "Failed to load data. Please check the console and try again."
+        );
       } finally {
         setLoading(false);
       }
@@ -172,12 +122,33 @@ function ClientManagement() {
   };
 
   const handleOpenDialog = (client = null) => {
+    setError("");
     if (client) {
-      // Edit mode - set the form data to the selected client's data
       setSelectedClient(client);
-      setFormData(client);
+      setFormData({
+        firstName: client.firstName || "",
+        lastName: client.lastName || "",
+        phoneNumber: client.phoneNumber || "",
+        address: client.address || "",
+        city: client.city || "",
+        state: client.state || "",
+        zipCode: client.zipCode || "",
+        isActive: client.isActive !== undefined ? client.isActive : true,
+        emergencyContactName: client.emergencyContactName || "",
+        emergencyContactPhone: client.emergencyContactPhone || "",
+        dietaryRestrictionIds:
+          client.clientDietaryRestrictions?.map(
+            (cdr) => cdr.dietaryRestrictionId
+          ) || [],
+        eligibilityCriteriaIds:
+          client.clientEligibilityCriteria?.map(
+            (cec) => cec.eligibilityCriterionId
+          ) || [],
+        medicalNotes: client.medicalNotes || "",
+        deliveryInstructions: client.deliveryInstructions || "",
+        routeId: client.routeId || null,
+      });
     } else {
-      // Add mode - reset the form
       setSelectedClient(null);
       setFormData({
         firstName: "",
@@ -190,10 +161,11 @@ function ClientManagement() {
         isActive: true,
         emergencyContactName: "",
         emergencyContactPhone: "",
-        dietaryRestrictions: "",
+        dietaryRestrictionIds: [],
+        eligibilityCriteriaIds: [],
         medicalNotes: "",
         deliveryInstructions: "",
-        routeId: "",
+        routeId: null,
       });
     }
     setOpenDialog(true);
@@ -202,90 +174,169 @@ function ClientManagement() {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedClient(null);
+    setError("");
   };
 
-  const handleInputChange = (e) => {
-    const { name, value, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: name === "isActive" ? checked : value,
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
+  const showNotification = (message, severity = "success") => {
+    setSnackbar({
+      open: true,
+      message,
+      severity,
     });
   };
 
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+
+    if (name === "dietaryRestrictionIds" || name === "eligibilityCriteriaIds") {
+      const selectedValues =
+        typeof value === "string" ? value.split(",") : value;
+      setFormData({
+        ...formData,
+        [name]: selectedValues,
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: type === "checkbox" ? checked : value,
+      });
+    }
+  };
+
   const handleSaveClient = async () => {
+    if (
+      !formData.firstName ||
+      !formData.lastName ||
+      !formData.address ||
+      !formData.city ||
+      !formData.state ||
+      !formData.zipCode
+    ) {
+      setError(
+        "Please fill in all required fields: First Name, Last Name, Address, City, State, ZIP Code."
+      );
+      return;
+    }
+
+    const clientData = {
+      ...formData,
+      routeId:
+        formData.routeId === "" || formData.routeId === null
+          ? null
+          : parseInt(formData.routeId, 10),
+      dietaryRestrictionIds: formData.dietaryRestrictionIds.map((id) =>
+        parseInt(id, 10)
+      ),
+      eligibilityCriteriaIds: formData.eligibilityCriteriaIds.map((id) =>
+        parseInt(id, 10)
+      ),
+    };
+
     try {
-      // Validate required fields
-      if (!formData.firstName || !formData.lastName || !formData.address) {
-        alert(
-          "Please fill in all required fields: First Name, Last Name, and Address."
-        );
-        return;
-      }
-
+      setError("");
+      let updatedClientData;
       if (selectedClient) {
-        // Update existing client
-        const updatedClients = clients.map((c) =>
-          c.id === selectedClient.id
-            ? { ...formData, id: selectedClient.id }
-            : c
+        // Use the API response directly
+        updatedClientData = await ClientService.updateClient(
+          selectedClient.id,
+          clientData
         );
-        setClients(updatedClients);
-        // In a real app, you would make an API call to update the client
+        setClients(
+          clients.map((c) =>
+            c.id === selectedClient.id ? updatedClientData : c
+          )
+        );
+        showNotification("Client updated successfully!");
       } else {
-        // Add new client
-        const newId = Math.max(...clients.map((c) => c.id), 0) + 1;
-        const newClient = {
-          ...formData,
-          id: newId,
-          registrationDate: new Date().toISOString().split("T")[0],
-        };
-        setClients([...clients, newClient]);
-        // In a real app, you would make an API call to create a new client
+        // Use the API response directly
+        updatedClientData = await ClientService.createClient(clientData);
+        setClients([...clients, updatedClientData]);
+        showNotification("Client added successfully!");
       }
-
       handleCloseDialog();
     } catch (err) {
       console.error("Error saving client:", err);
-      alert("Failed to save the client. Please try again.");
+      const errorMsg =
+        err.response?.data?.title ||
+        err.response?.data?.message ||
+        "Failed to save the client. Please check console.";
+      setError(errorMsg);
     }
   };
 
   const handleToggleStatus = async (client) => {
-    try {
-      // Update client status
-      const updatedClients = clients.map((c) =>
-        c.id === client.id ? { ...c, isActive: !c.isActive } : c
-      );
-      setClients(updatedClients);
-      // In a real app, you would make an API call to update the client status
-    } catch (err) {
-      console.error("Error toggling client status:", err);
-      alert("Failed to update client status. Please try again.");
-    }
-  };
-
-  const handleDeleteClient = async (client) => {
+    const newStatus = !client.isActive;
+    const action = newStatus ? "activate" : "deactivate";
     if (
       !window.confirm(
-        `Are you sure you want to delete ${client.firstName} ${client.lastName}?`
+        `Are you sure you want to ${action} ${client.firstName} ${client.lastName}?`
       )
     ) {
       return;
     }
 
     try {
-      // Remove the client from the list
-      const updatedClients = clients.filter((c) => c.id !== client.id);
-      setClients(updatedClients);
-      // In a real app, you would make an API call to delete the client
+      setError("");
+      const clientToUpdate = { ...client, isActive: newStatus };
+      delete clientToUpdate.clientDietaryRestrictions;
+      delete clientToUpdate.clientEligibilityCriteria;
+      delete clientToUpdate.route;
+
+      await ClientService.updateClient(client.id, clientToUpdate);
+
+      setClients(
+        clients.map((c) =>
+          c.id === client.id ? { ...c, isActive: newStatus } : c
+        )
+      );
+      showNotification(`Client ${action}d successfully!`);
+    } catch (err) {
+      console.error(`Error ${action}ing client:`, err);
+      const errorMsg =
+        err.response?.data?.message ||
+        `Failed to ${action} client. Please try again.`;
+      setError(errorMsg);
+      showNotification(errorMsg, "error");
+    }
+  };
+
+  const handleDeleteClient = async (client) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete ${client.firstName} ${client.lastName}? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setError("");
+      await ClientService.deleteClient(client.id);
+
+      setClients(clients.filter((c) => c.id !== client.id));
+      showNotification("Client deleted successfully!");
     } catch (err) {
       console.error("Error deleting client:", err);
-      alert("Failed to delete the client. Please try again.");
+      const errorMsg =
+        err.response?.data?.message ||
+        "Failed to delete the client. Please try again.";
+      setError(errorMsg);
+      showNotification(errorMsg, "error");
     }
   };
 
   const getFullAddress = (client) => {
-    return `${client.address}, ${client.city}, ${client.state} ${client.zipCode}`;
+    const parts = [
+      client?.address,
+      client?.city,
+      client?.state,
+      client?.zipCode,
+    ];
+    return parts.filter(Boolean).join(", ");
   };
 
   if (loading) {
@@ -303,12 +354,14 @@ function ClientManagement() {
     );
   }
 
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
-
   return (
     <Box>
+      {error && !openDialog && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
         <Typography variant="h4" gutterBottom>
           Client Management
@@ -339,77 +392,98 @@ function ClientManagement() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {clients
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((client) => (
-                  <TableRow hover role="checkbox" tabIndex={-1} key={client.id}>
-                    <TableCell>{client.id}</TableCell>
-                    <TableCell>{`${client.firstName} ${client.lastName}`}</TableCell>
-                    <TableCell>{getFullAddress(client)}</TableCell>
-                    <TableCell>{client.phoneNumber}</TableCell>
-                    <TableCell>
-                      {client.dietaryRestrictions || "None"}
-                    </TableCell>
-                    <TableCell>
-                      {client.isActive ? (
-                        <Chip
-                          label="Active"
-                          color="success"
-                          size="small"
-                          icon={<CheckCircleIcon />}
-                        />
-                      ) : (
-                        <Chip
-                          label="Inactive"
-                          color="default"
-                          size="small"
-                          icon={<CancelIcon />}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        justifyContent="center"
-                      >
-                        <Tooltip title="Edit">
-                          <IconButton
-                            color="primary"
+              {clients.length === 0 && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} align="center">
+                    No clients found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                clients
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((client) => (
+                    <TableRow
+                      hover
+                      role="checkbox"
+                      tabIndex={-1}
+                      key={client.id}
+                    >
+                      <TableCell>{client.id}</TableCell>
+                      <TableCell>{`${client.firstName} ${client.lastName}`}</TableCell>
+                      <TableCell>{getFullAddress(client)}</TableCell>
+                      <TableCell>{client.phoneNumber || "N/A"}</TableCell>
+                      <TableCell>
+                        {client.dietaryRestrictions
+                          ? Array.isArray(client.dietaryRestrictions)
+                            ? client.dietaryRestrictions
+                                .map((dr) => dr.restrictionName)
+                                .join(", ")
+                            : typeof client.dietaryRestrictions === "object"
+                            ? client.dietaryRestrictions.restrictionName
+                            : client.dietaryRestrictions
+                          : "None"}
+                      </TableCell>
+                      <TableCell>
+                        {client.isActive ? (
+                          <Chip
+                            label="Active"
+                            color="success"
                             size="small"
-                            onClick={() => handleOpenDialog(client)}
-                          >
-                            <EditIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip
-                          title={client.isActive ? "Deactivate" : "Activate"}
+                            icon={<CheckCircleIcon />}
+                          />
+                        ) : (
+                          <Chip
+                            label="Inactive"
+                            color="default"
+                            size="small"
+                            icon={<CancelIcon />}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="center"
                         >
-                          <IconButton
-                            color={client.isActive ? "error" : "success"}
-                            size="small"
-                            onClick={() => handleToggleStatus(client)}
+                          <Tooltip title="Edit">
+                            <IconButton
+                              color="primary"
+                              size="small"
+                              onClick={() => handleOpenDialog(client)}
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip
+                            title={client.isActive ? "Deactivate" : "Activate"}
                           >
-                            {client.isActive ? (
-                              <CancelIcon />
-                            ) : (
-                              <CheckCircleIcon />
-                            )}
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton
-                            color="error"
-                            size="small"
-                            onClick={() => handleDeleteClient(client)}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            <IconButton
+                              color={client.isActive ? "error" : "success"}
+                              size="small"
+                              onClick={() => handleToggleStatus(client)}
+                            >
+                              {client.isActive ? (
+                                <CancelIcon />
+                              ) : (
+                                <CheckCircleIcon />
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              color="error"
+                              size="small"
+                              onClick={() => handleDeleteClient(client)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -424,7 +498,6 @@ function ClientManagement() {
         />
       </Paper>
 
-      {/* Dialog for Adding/Editing Clients */}
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
@@ -435,7 +508,12 @@ function ClientManagement() {
           {selectedClient ? "Edit Client" : "Add New Client"}
         </DialogTitle>
         <DialogContent>
-          <Box component="form" sx={{ mt: 2 }}>
+          {error && openDialog && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Box component="form" noValidate sx={{ mt: 2 }}>
             <Typography variant="subtitle1" gutterBottom>
               Personal Information
             </Typography>
@@ -474,18 +552,20 @@ function ClientManagement() {
                   <InputLabel>Delivery Route</InputLabel>
                   <Select
                     name="routeId"
-                    value={formData.routeId}
+                    value={formData.routeId || ""}
                     label="Delivery Route"
                     onChange={handleInputChange}
                   >
                     <MenuItem value="">
                       <em>None</em>
                     </MenuItem>
-                    {routes.map((route) => (
-                      <MenuItem key={route.id} value={route.id}>
-                        {route.name}
-                      </MenuItem>
-                    ))}
+                    {routes
+                      .filter((r) => r.isActive)
+                      .map((route) => (
+                        <MenuItem key={route.id} value={route.id}>
+                          {route.name}
+                        </MenuItem>
+                      ))}
                   </Select>
                 </FormControl>
               </Grid>
@@ -518,29 +598,21 @@ function ClientManagement() {
                 />
               </Grid>
               <Grid item xs={12} sm={4}>
-                <FormControl fullWidth>
+                <FormControl fullWidth required>
                   <InputLabel>State</InputLabel>
                   <Select
                     name="state"
                     value={formData.state}
                     label="State"
                     onChange={handleInputChange}
+                    required
                   >
                     <MenuItem value="AL">Alabama</MenuItem>
                     <MenuItem value="AK">Alaska</MenuItem>
                     <MenuItem value="AZ">Arizona</MenuItem>
                     <MenuItem value="AR">Arkansas</MenuItem>
                     <MenuItem value="CA">California</MenuItem>
-                    <MenuItem value="CO">Colorado</MenuItem>
-                    <MenuItem value="CT">Connecticut</MenuItem>
-                    <MenuItem value="DE">Delaware</MenuItem>
-                    <MenuItem value="FL">Florida</MenuItem>
-                    <MenuItem value="GA">Georgia</MenuItem>
-                    <MenuItem value="HI">Hawaii</MenuItem>
-                    <MenuItem value="ID">Idaho</MenuItem>
                     <MenuItem value="IL">Illinois</MenuItem>
-                    <MenuItem value="IN">Indiana</MenuItem>
-                    {/* Add all states here */}
                   </Select>
                 </FormControl>
               </Grid>
@@ -603,9 +675,10 @@ function ClientManagement() {
                 <TextField
                   fullWidth
                   name="dietaryRestrictions"
-                  label="Dietary Restrictions"
+                  label="Dietary Restrictions (Text)"
                   value={formData.dietaryRestrictions}
                   onChange={handleInputChange}
+                  helperText="Separate multiple restrictions with commas"
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -629,7 +702,7 @@ function ClientManagement() {
                       color="primary"
                     />
                   }
-                  label="Active"
+                  label="Active Client"
                 />
               </Grid>
             </Grid>
@@ -638,10 +711,24 @@ function ClientManagement() {
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSaveClient} variant="contained">
-            Save
+            {selectedClient ? "Update Client" : "Add Client"}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

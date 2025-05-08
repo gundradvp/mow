@@ -37,9 +37,20 @@ function Login() {
       await login(username, password);
       navigate("/dashboard");
     } catch (err) {
-      setError(
-        err.response?.data || "Failed to log in. Please check your credentials."
-      );
+      console.error("Login error details:", err);
+
+      // More detailed error handling
+      if (err.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        setError(err.response.data || `Server error: ${err.response.status}`);
+      } else if (err.request) {
+        // The request was made but no response was received
+        setError("No response from server. Please check your connection.");
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        setError(`Error: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }

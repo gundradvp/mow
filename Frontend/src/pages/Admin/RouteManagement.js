@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import DeliveryRoutesService from "../../services/delivery-routes-service";
 
 // MUI components
 import Typography from "@mui/material/Typography";
@@ -29,6 +29,7 @@ import Divider from "@mui/material/Divider";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Badge from "@mui/material/Badge";
+import Snackbar from "@mui/material/Snackbar";
 
 // Icons
 import AddRoadIcon from "@mui/icons-material/AddRoad";
@@ -56,72 +57,36 @@ function RouteManagement() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState(null);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    area: "",
-    estimatedDuration: "",
+    estimatedDurationMinutes: 0,
     isActive: true,
   });
 
+  const fetchRoutes = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const data = await DeliveryRoutesService.getAllRoutes();
+      setRoutes(data);
+    } catch (err) {
+      console.error("Error fetching routes:", err);
+      setError(
+        err.response?.data?.message ||
+          "Failed to load routes. Please try again later."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchRoutes = async () => {
-      try {
-        setLoading(true);
-
-        // In a real app, this would be an API call to your backend
-        // For now, we'll simulate the data with a delay
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        // Mock data for routes
-        const mockRoutes = [
-          {
-            id: 1,
-            name: "Route A",
-            description: "Downtown area - North side",
-            area: "Downtown",
-            estimatedDuration: "45 minutes",
-            isActive: true,
-            clientCount: 12,
-          },
-          {
-            id: 2,
-            name: "Route B",
-            description: "Eastside residential",
-            area: "East Springfield",
-            estimatedDuration: "35 minutes",
-            isActive: true,
-            clientCount: 8,
-          },
-          {
-            id: 3,
-            name: "Route C",
-            description: "Westside and university area",
-            area: "West Springfield",
-            estimatedDuration: "50 minutes",
-            isActive: true,
-            clientCount: 15,
-          },
-          {
-            id: 4,
-            name: "Route D",
-            description: "South suburb route",
-            area: "South Springfield",
-            estimatedDuration: "40 minutes",
-            isActive: false,
-            clientCount: 0,
-          },
-        ];
-
-        setRoutes(mockRoutes);
-      } catch (err) {
-        console.error("Error fetching routes:", err);
-        setError("Failed to load routes. Please try again later.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRoutes();
   }, []);
 
@@ -135,24 +100,21 @@ function RouteManagement() {
   };
 
   const handleOpenDialog = (route = null) => {
+    setError("");
     if (route) {
-      // Edit mode - set the form data to the selected route's data
       setSelectedRoute(route);
       setFormData({
-        name: route.name,
-        description: route.description,
-        area: route.area,
-        estimatedDuration: route.estimatedDuration,
-        isActive: route.isActive,
+        name: route.name || "",
+        description: route.description || "",
+        estimatedDurationMinutes: route.estimatedDurationMinutes || 0,
+        isActive: route.isActive !== undefined ? route.isActive : true,
       });
     } else {
-      // Add mode - reset the form
       setSelectedRoute(null);
       setFormData({
         name: "",
         description: "",
-        area: "",
-        estimatedDuration: "",
+        estimatedDurationMinutes: 0,
         isActive: true,
       });
     }
@@ -162,90 +124,127 @@ function RouteManagement() {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedRoute(null);
+    setError("");
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   const handleInputChange = (e) => {
-    const { name, value, checked } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormData({
       ...formData,
-      [name]: name === "isActive" ? checked : value,
+      [name]:
+        type === "checkbox"
+          ? checked
+          : name === "estimatedDurationMinutes"
+          ? parseInt(value, 10) || 0
+          : value,
+    });
+  };
+
+  const showNotification = (message, severity = "success") => {
+    setSnackbar({
+      open: true,
+      message,
+      severity,
     });
   };
 
   const handleSaveRoute = async () => {
+    if (!formData.name) {
+      setError("Please enter a route name.");
+      return;
+    }
+    if (formData.estimatedDurationMinutes < 0) {
+      setError("Estimated duration cannot be negative.");
+      return;
+    }
+
+    const routeData = {
+      name: formData.name,
+      description: formData.description,
+      estimatedDurationMinutes: formData.estimatedDurationMinutes,
+      isActive: formData.isActive,
+    };
+
     try {
-      // Validate required fields
-      if (!formData.name) {
-        alert("Please enter a route name.");
-        return;
-      }
-
+      setError("");
       if (selectedRoute) {
-        // Update existing route
-        const updatedRoutes = routes.map((r) =>
-          r.id === selectedRoute.id
-            ? {
-                ...selectedRoute,
-                ...formData,
-              }
-            : r
-        );
-        setRoutes(updatedRoutes);
-        // In a real app, you would make an API call to update the route
+        await DeliveryRoutesService.updateRoute(selectedRoute.id, routeData);
+        showNotification("Route updated successfully!");
       } else {
-        // Add new route
-        const newId = Math.max(...routes.map((r) => r.id), 0) + 1;
-        const newRoute = {
-          ...formData,
-          id: newId,
-          clientCount: 0,
-        };
-        setRoutes([...routes, newRoute]);
-        // In a real app, you would make an API call to create a new route
+        await DeliveryRoutesService.createRoute(routeData);
+        showNotification("Route added successfully!");
       }
-
       handleCloseDialog();
+      fetchRoutes();
     } catch (err) {
       console.error("Error saving route:", err);
-      alert("Failed to save the route. Please try again.");
+      const errorMsg =
+        err.response?.data?.title ||
+        err.response?.data?.message ||
+        "Failed to save the route. Please check console.";
+      setError(errorMsg);
     }
   };
 
   const handleToggleStatus = async (route) => {
+    const newStatus = !route.isActive;
+    const action = newStatus ? "activate" : "deactivate";
+    if (
+      !window.confirm(
+        `Are you sure you want to ${action} route "${route.name}"?`
+      )
+    ) {
+      return;
+    }
+
     try {
-      // Update route status
-      const updatedRoutes = routes.map((r) =>
-        r.id === route.id ? { ...r, isActive: !r.isActive } : r
-      );
-      setRoutes(updatedRoutes);
-      // In a real app, you would make an API call to update the route status
+      setError("");
+      await DeliveryRoutesService.toggleRouteStatus(route.id, route);
+      showNotification(`Route ${action}d successfully!`);
+      fetchRoutes();
     } catch (err) {
-      console.error("Error toggling route status:", err);
-      alert("Failed to update route status. Please try again.");
+      console.error(`Error ${action}ing route:`, err);
+      const errorMsg =
+        err.response?.data?.message ||
+        `Failed to ${action} route. Please try again.`;
+      setError(errorMsg);
+      showNotification(errorMsg, "error");
     }
   };
 
   const handleDeleteRoute = async (route) => {
-    // Prevent deletion if the route has clients
     if (route.clientCount > 0) {
-      alert(
-        `Cannot delete route "${route.name}" because it has ${route.clientCount} clients assigned to it. Please reassign clients before deleting.`
+      showNotification(
+        `Cannot delete route "${route.name}" because it has ${route.clientCount} clients assigned. Please reassign clients before deleting.`,
+        "error"
       );
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete "${route.name}"?`)) {
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete route "${route.name}"? This action cannot be undone.`
+      )
+    ) {
       return;
     }
 
     try {
-      // Remove the route from the list
-      const updatedRoutes = routes.filter((r) => r.id !== route.id);
-      setRoutes(updatedRoutes);
-      // In a real app, you would make an API call to delete the route
+      setError("");
+      await DeliveryRoutesService.deleteRoute(route.id);
+      showNotification("Route deleted successfully!");
+      fetchRoutes();
     } catch (err) {
       console.error("Error deleting route:", err);
-      alert("Failed to delete the route. Please try again.");
+      const errorMsg =
+        err.response?.data?.message ||
+        "Failed to delete the route. Please try again.";
+      setError(errorMsg);
+      showNotification(errorMsg, "error");
     }
   };
 
@@ -264,12 +263,14 @@ function RouteManagement() {
     );
   }
 
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
-
   return (
     <Box>
+      {error && !openDialog && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
         <Typography variant="h4" gutterBottom>
           Route Management
@@ -300,88 +301,107 @@ function RouteManagement() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {routes
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((route) => (
-                  <TableRow hover role="checkbox" tabIndex={-1} key={route.id}>
-                    <TableCell>{route.id}</TableCell>
-                    <TableCell>
-                      <Box sx={{ display: "flex", alignItems: "center" }}>
-                        <RouteIcon sx={{ color: "primary.main", mr: 1 }} />
-                        {route.name}
-                      </Box>
-                    </TableCell>
-                    <TableCell>{route.description}</TableCell>
-                    <TableCell align="center">
-                      <Badge
-                        badgeContent={route.clientCount}
-                        color="primary"
-                        showZero
-                      >
-                        <PersonIcon />
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {route.isActive ? (
-                        <Chip
-                          label="Active"
-                          color="success"
-                          size="small"
-                          icon={<CheckCircleIcon />}
-                        />
-                      ) : (
-                        <Chip
-                          label="Inactive"
-                          color="default"
-                          size="small"
-                          icon={<CancelIcon />}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        justifyContent="center"
-                      >
-                        <Tooltip title="Edit">
-                          <IconButton
-                            color="primary"
-                            size="small"
-                            onClick={() => handleOpenDialog(route)}
-                          >
-                            <EditIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip
-                          title={route.isActive ? "Deactivate" : "Activate"}
+              {routes.length === 0 && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} align="center">
+                    No routes found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                routes
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((route) => (
+                    <TableRow
+                      hover
+                      role="checkbox"
+                      tabIndex={-1}
+                      key={route.id}
+                    >
+                      <TableCell>{route.id}</TableCell>
+                      <TableCell>
+                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                          <RouteIcon sx={{ color: "primary.main", mr: 1 }} />
+                          {route.name}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{route.description || "N/A"}</TableCell>
+                      <TableCell align="center">
+                        <Badge
+                          badgeContent={
+                            route.clientCount !== undefined
+                              ? route.clientCount
+                              : "?"
+                          }
+                          color="primary"
+                          showZero
                         >
-                          <IconButton
-                            color={route.isActive ? "error" : "success"}
+                          <PersonIcon />
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {route.isActive ? (
+                          <Chip
+                            label="Active"
+                            color="success"
                             size="small"
-                            onClick={() => handleToggleStatus(route)}
-                          >
-                            {route.isActive ? (
-                              <CancelIcon />
-                            ) : (
-                              <CheckCircleIcon />
-                            )}
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton
-                            color="error"
+                            icon={<CheckCircleIcon />}
+                          />
+                        ) : (
+                          <Chip
+                            label="Inactive"
+                            color="default"
                             size="small"
-                            onClick={() => handleDeleteRoute(route)}
-                            disabled={route.clientCount > 0}
+                            icon={<CancelIcon />}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="center"
+                        >
+                          <Tooltip title="Edit">
+                            <IconButton
+                              color="primary"
+                              size="small"
+                              onClick={() => handleOpenDialog(route)}
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip
+                            title={route.isActive ? "Deactivate" : "Activate"}
                           >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            <IconButton
+                              color={route.isActive ? "error" : "success"}
+                              size="small"
+                              onClick={() => handleToggleStatus(route)}
+                            >
+                              {route.isActive ? (
+                                <CancelIcon />
+                              ) : (
+                                <CheckCircleIcon />
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <span>
+                              <IconButton
+                                color="error"
+                                size="small"
+                                onClick={() => handleDeleteRoute(route)}
+                                disabled={route.clientCount > 0}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -396,23 +416,28 @@ function RouteManagement() {
         />
       </Paper>
 
-      {/* Dialog for Adding/Editing Routes */}
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
         fullWidth
-        maxWidth="md"
+        maxWidth="sm"
       >
         <DialogTitle>
           {selectedRoute ? "Edit Route" : "Add New Route"}
         </DialogTitle>
         <DialogContent>
-          <Box component="form" sx={{ mt: 2 }}>
+          {error && openDialog && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Box component="form" noValidate sx={{ mt: 2 }}>
             <Grid container spacing={2}>
               <Grid item xs={12}>
                 <TextField
                   required
                   fullWidth
+                  autoFocus
                   name="name"
                   label="Route Name"
                   value={formData.name}
@@ -430,28 +455,15 @@ function RouteManagement() {
                   onChange={handleInputChange}
                 />
               </Grid>
-            </Grid>
-
-            <Divider sx={{ my: 3 }} />
-
-            <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  name="area"
-                  label="Area/Neighborhood"
-                  value={formData.area}
+                  type="number"
+                  name="estimatedDurationMinutes"
+                  label="Estimated Duration (Minutes)"
+                  value={formData.estimatedDurationMinutes}
                   onChange={handleInputChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  name="estimatedDuration"
-                  label="Estimated Duration"
-                  value={formData.estimatedDuration}
-                  onChange={handleInputChange}
-                  placeholder="e.g., 45 minutes"
+                  InputProps={{ inputProps: { min: 0 } }}
                 />
               </Grid>
               <Grid item xs={12}>
@@ -464,7 +476,7 @@ function RouteManagement() {
                       color="primary"
                     />
                   }
-                  label="Active"
+                  label="Active Route"
                 />
               </Grid>
             </Grid>
@@ -473,10 +485,24 @@ function RouteManagement() {
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSaveRoute} variant="contained">
-            Save
+            {selectedRoute ? "Update Route" : "Add Route"}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

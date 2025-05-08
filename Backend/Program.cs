@@ -6,15 +6,41 @@ using MOWScheduler.Data;
 using MOWScheduler.Models;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using MOWScheduler.Mapping;
+using System.Data.SqlClient;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+
+// Add these lines to bypass SSL certificate validation for SQL Server
+AppContext.SetSwitch("Microsoft.Data.SqlClient.AcceptAnyServerCertificate", true);
+// Also register a certificate validation callback that always returns true
+System.Net.ServicePointManager.ServerCertificateValidationCallback = 
+    delegate (object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors) { return true; };
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Configure database context - CHANGED TO IN-MEMORY DATABASE
+// Configure database context with SQL Server settings and explicitly disable encryption
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+connectionString += connectionString.Contains("Encrypt=") ? "" : ";Encrypt=False";
+connectionString += connectionString.Contains("TrustServerCertificate=") ? "" : ";TrustServerCertificate=True";
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseInMemoryDatabase("MOWSchedulerDb"));
+{
+    options.UseSqlServer(connectionString, 
+        sqlOptions => 
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorNumbersToAdd: null);
+        });
+});
+
+// Add AutoMapper
+builder.Services.AddAutoMapper(typeof(MappingProfile)); // Register AutoMapper and the profile
 
 // Configure JWT authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -38,16 +64,21 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", builder =>
     {
-        builder.WithOrigins("http://localhost:3000") // React app URL
-               .AllowAnyHeader()
-               .AllowAnyMethod();
+        builder.WithOrigins(
+                "http://localhost:3000", // React app URL
+                "https://localhost:5051", // Same as this app for Swagger
+                "http://localhost:5050"   // Same as this app for Swagger
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
 // Configure HTTPS
 builder.Services.AddHttpsRedirection(options =>
 {
-    options.HttpsPort = 5051;
+    options.HttpsPort = 5053;
 });
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -92,11 +123,14 @@ using (var scope = app.Services.CreateScope())
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
         DbSeeder.Initialize(context);
+        Console.WriteLine("Database seeding completed successfully.");
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
         logger.LogError(ex, "An error occurred while seeding the database.");
+        Console.WriteLine($"Database seeding error: {ex.Message}");
+        Console.WriteLine(ex.StackTrace);
     }
 }
 

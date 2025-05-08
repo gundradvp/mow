@@ -30,6 +30,25 @@ namespace MOWScheduler.Controllers
                 .ToListAsync();
         }
 
+        // GET: api/DeliveryRoutes/details
+        [HttpGet("details")]
+        public async Task<ActionResult<IEnumerable<object>>> GetRoutesWithDetails()
+        {
+            var routes = await _context.DeliveryRoutes
+                .Select(r => new 
+                {
+                    r.Id,
+                    r.Name,
+                    r.Description,
+                    r.EstimatedDuration, // Fixed: Changed from EstimatedDurationMinutes to EstimatedDuration
+                    r.IsActive,
+                    ClientCount = r.Clients.Count(c => c.IsActive)
+                })
+                .ToListAsync();
+
+            return Ok(routes);
+        }
+
         // GET: api/DeliveryRoutes/5
         [HttpGet("{id}")]
         public async Task<ActionResult<DeliveryRoute>> GetRoute(int id)
@@ -44,6 +63,16 @@ namespace MOWScheduler.Controllers
             }
 
             return route;
+        }
+
+        // GET: api/DeliveryRoutes/5/clientcount
+        [HttpGet("{id}/clientcount")]
+        public async Task<ActionResult<object>> GetRouteClientCount(int id)
+        {
+            var count = await _context.Clients
+                .CountAsync(c => c.RouteId == id && c.IsActive); // Fixed: Changed from DeliveryRouteId to RouteId
+            
+            return Ok(new { count });
         }
 
         // GET: api/DeliveryRoutes/count

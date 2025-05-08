@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using MOWScheduler.Data;
 using MOWScheduler.Models;
+using MOWScheduler.DTOs.Volunteer;
 using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -12,6 +13,9 @@ using System.Threading.Tasks;
 
 namespace MOWScheduler.Controllers
 {
+    /// <summary>
+    /// Controller for handling authentication-related operations.
+    /// </summary>
     [Route("api/[controller]")]
     [ApiController]
     public class AuthController : ControllerBase
@@ -19,12 +23,22 @@ namespace MOWScheduler.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IConfiguration _configuration;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AuthController"/> class.
+        /// </summary>
+        /// <param name="context">The database context.</param>
+        /// <param name="configuration">The application configuration.</param>
         public AuthController(ApplicationDbContext context, IConfiguration configuration)
         {
             _context = context;
             _configuration = configuration;
         }
 
+        /// <summary>
+        /// Registers a new user.
+        /// </summary>
+        /// <param name="registerDto">The registration details.</param>
+        /// <returns>An action result indicating the outcome of the registration.</returns>
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto registerDto)
         {
@@ -64,6 +78,114 @@ namespace MOWScheduler.Controllers
             }
         }
 
+        /// <summary>
+        /// Registers a new volunteer with detailed information.
+        /// </summary>
+        /// <param name="registrationDto">The volunteer registration details.</param>
+        /// <returns>An action result indicating the outcome of the registration.</returns>
+        [HttpPost("register-volunteer")]
+        public async Task<IActionResult> RegisterVolunteer(VolunteerRegistrationDTO registrationDto)
+        {
+            try
+            {
+                if (await _context.Users.AnyAsync(u => u.Username == registrationDto.Username))
+                    return BadRequest("Username already exists");
+
+                if (await _context.Users.AnyAsync(u => u.Email == registrationDto.Email))
+                    return BadRequest("Email already exists");
+
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    try
+                    {
+                        // Generate password hash with salt
+                        string passwordHash = BCrypt.Net.BCrypt.HashPassword(registrationDto.Password);
+
+                        // Create user entity
+                        var user = new User
+                        {
+                            Username = registrationDto.Username,
+                            Email = registrationDto.Email,
+                            PasswordHash = passwordHash,
+                            FirstName = registrationDto.FirstName,
+                            LastName = registrationDto.LastName,
+                            PhoneNumber = registrationDto.PhoneNumber,
+                            Role = "Volunteer", // Specific role for volunteers
+                            CreatedAt = DateTime.Now,
+                            IsActive = true
+                        };
+
+                        // Add and save user to get the ID
+                        _context.Users.Add(user);
+                        await _context.SaveChangesAsync();
+
+                        // Create volunteer entity with detailed information
+                        var volunteer = new Volunteer
+                        {
+                            UserId = user.Id,
+                            Address = registrationDto.Address,
+                            City = registrationDto.City,
+                            State = registrationDto.State,
+                            ZipCode = registrationDto.ZipCode,
+                            Availability = registrationDto.Availability,
+                            HasDriverLicense = registrationDto.HasDriverLicense,
+                            IsWillingToDrive = registrationDto.IsWillingToDrive,
+                            CanLift20Pounds = registrationDto.CanLift20Pounds,
+                            BackgroundCheckConsent = registrationDto.BackgroundCheckConsent,
+                            EmergencyContactName = registrationDto.EmergencyContactName,
+                            EmergencyContactPhone = registrationDto.EmergencyContactPhone,
+                            EmergencyContactRelationship = registrationDto.EmergencyContactRelationship,
+                            Skills = registrationDto.Skills,
+                            Preferences = registrationDto.Preferences,
+                            IsActive = true,
+                            StartDate = DateTime.Now
+                        };
+
+                        _context.Volunteers.Add(volunteer);
+                        await _context.SaveChangesAsync();
+
+                        await transaction.CommitAsync();
+
+                        // Create a notification for admin about new volunteer registration
+                        var adminUsers = await _context.Users.Where(u => u.Role == "Admin").ToListAsync();
+                        foreach (var admin in adminUsers)
+                        {
+                            _context.Notifications.Add(new Notification
+                            {
+                                UserId = admin.Id,
+                                Title = "New Volunteer Registration",
+                                Message = $"New volunteer {user.FirstName} {user.LastName} has registered and needs approval.",
+                                Type = "InApp",
+                                Status = "Unread",
+                                CreatedAt = DateTime.Now,
+                                ReferenceId = volunteer.Id,
+                                ReferenceType = "Volunteer"
+                            });
+                        }
+                        await _context.SaveChangesAsync();
+
+                        return Ok(new { message = "Volunteer registration successful" });
+                    }
+                    catch (Exception ex)
+                    {
+                        await transaction.RollbackAsync();
+                        throw new Exception("Transaction failed", ex);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log the exception
+                Console.WriteLine($"Volunteer registration error: {ex.Message}");
+                return StatusCode(500, "An error occurred during registration. Please try again.");
+            }
+        }
+
+        /// <summary>
+        /// Authenticates a user and returns a token.
+        /// </summary>
+        /// <param name="loginDto">The login details.</param>
+        /// <returns>An action result containing the authentication token.</returns>
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto loginDto)
         {
@@ -100,6 +222,11 @@ namespace MOWScheduler.Controllers
             }
         }
 
+        /// <summary>
+        /// Generates a JWT token for the authenticated user.
+        /// </summary>
+        /// <param name="user">The authenticated user.</param>
+        /// <returns>A JWT token string.</returns>
         private string GenerateJwtToken(User user)
         {
             var claims = new[]
@@ -127,19 +254,55 @@ namespace MOWScheduler.Controllers
         }
     }
 
+    /// <summary>
+    /// Data transfer object for user registration.
+    /// </summary>
     public class RegisterDto
     {
+        /// <summary>
+        /// Gets or sets the username.
+        /// </summary>
         public string Username { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the email address.
+        /// </summary>
         public string Email { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the password.
+        /// </summary>
         public string Password { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the first name.
+        /// </summary>
         public string FirstName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the last name.
+        /// </summary>
         public string LastName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the phone number.
+        /// </summary>
         public string? PhoneNumber { get; set; }
     }
 
+    /// <summary>
+    /// Data transfer object for user login.
+    /// </summary>
     public class LoginDto
     {
+        /// <summary>
+        /// Gets or sets the username.
+        /// </summary>
         public string Username { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the password.
+        /// </summary>
         public string Password { get; set; } = string.Empty;
     }
 }
