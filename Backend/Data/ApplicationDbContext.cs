@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MOWScheduler.Models;
+using MOWScheduler.Models.Inventory;
 
 namespace MOWScheduler.Data
 {
@@ -90,12 +91,35 @@ namespace MOWScheduler.Data
         /// <summary>
         /// Gets or sets the ClientDeliverySchedules table.
         /// </summary>
-        public DbSet<ClientDeliverySchedule> ClientDeliverySchedules { get; set; }
-
-        /// <summary>
+        public DbSet<ClientDeliverySchedule> ClientDeliverySchedules { get; set; }        /// <summary>
         /// Gets or sets the ClientDeliveryScheduleDetails table.
         /// </summary>
         public DbSet<ClientDeliveryScheduleDetail> ClientDeliveryScheduleDetails { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Categories table for inventory categorization.
+        /// </summary>
+        public DbSet<Category> Categories { get; set; }
+
+        /// <summary>
+        /// Gets or sets the InventoryItems table.
+        /// </summary>
+        public DbSet<InventoryItem> InventoryItems { get; set; }
+
+        /// <summary>
+        /// Gets or sets the InventoryTransactions table.
+        /// </summary>
+        public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Meals table.
+        /// </summary>
+        public DbSet<Meal> Meals { get; set; }
+
+        /// <summary>
+        /// Gets or sets the MealIngredients table.
+        /// </summary>
+        public DbSet<MealIngredient> MealIngredients { get; set; }
 
         /// <summary>
         /// Configures the model relationships and constraints.
@@ -188,14 +212,71 @@ namespace MOWScheduler.Data
             modelBuilder.Entity<ClientDeliveryScheduleDetail>()
                 .HasOne(cdsd => cdsd.MealType)
                 .WithMany(mt => mt.ScheduleDetails)
-                .HasForeignKey(cdsd => cdsd.MealTypeId);
-
-            // Client -> DeliveryRoute (One-to-Many, Optional)
+                .HasForeignKey(cdsd => cdsd.MealTypeId);            // Client -> DeliveryRoute (One-to-Many, Optional)
             modelBuilder.Entity<Client>()
                 .HasOne(c => c.Route)
                 .WithMany() // Assuming Route doesn't need direct collection of Clients yet
                 .HasForeignKey(c => c.RouteId)
                 .IsRequired(false); // RouteId is nullable
+                
+            // Inventory Management Relationships
+            
+            // Category -> Category (Self-referencing for parent-child categories)
+            modelBuilder.Entity<Category>()
+                .HasOne(c => c.ParentCategory)
+                .WithMany(c => c.ChildCategories)
+                .HasForeignKey(c => c.ParentCategoryId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict);
+                
+            // Category -> InventoryItem (One-to-Many)
+            modelBuilder.Entity<InventoryItem>()
+                .HasOne(i => i.Category)
+                .WithMany(c => c.Items)
+                .HasForeignKey(i => i.CategoryId);
+                
+            // InventoryItem -> InventoryTransaction (One-to-Many)
+            modelBuilder.Entity<InventoryTransaction>()
+                .HasOne(t => t.Item)
+                .WithMany()
+                .HasForeignKey(t => t.ItemId);
+                
+            // Configure decimal precision for inventory-related properties
+            modelBuilder.Entity<InventoryItem>()
+                .Property(i => i.CurrentQuantity)
+                .HasPrecision(10, 2);
+                
+            modelBuilder.Entity<InventoryItem>()
+                .Property(i => i.ReorderThreshold)
+                .HasPrecision(10, 2);
+                
+            modelBuilder.Entity<InventoryItem>()
+                .Property(i => i.ReorderQuantity)
+                .HasPrecision(10, 2);
+                
+            modelBuilder.Entity<InventoryItem>()
+                .Property(i => i.UnitCost)
+                .HasPrecision(10, 2);
+                
+            modelBuilder.Entity<InventoryTransaction>()
+                .Property(t => t.Quantity)
+                .HasPrecision(10, 2);
+                
+            // Meal -> MealIngredient (One-to-Many)
+            modelBuilder.Entity<MealIngredient>()
+                .HasOne(mi => mi.Meal)
+                .WithMany(m => m.Ingredients)
+                .HasForeignKey(mi => mi.MealId);
+                
+            // InventoryItem -> MealIngredient (One-to-Many)
+            modelBuilder.Entity<MealIngredient>()
+                .HasOne(mi => mi.Item)
+                .WithMany()
+                .HasForeignKey(mi => mi.ItemId);
+                
+            modelBuilder.Entity<MealIngredient>()
+                .Property(mi => mi.Quantity)
+                .HasPrecision(10, 2);
         }
     }
 }

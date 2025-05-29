@@ -46,13 +46,27 @@ namespace MOWScheduler.Models
         /// <summary>
         /// Gets or sets the phone number of the user.
         /// </summary>
-        public string? PhoneNumber { get; set; }
-
-        /// <summary>
-        /// Gets or sets the role of the user (e.g., Admin, Coordinator, Volunteer).
+        public string? PhoneNumber { get; set; }        /// <summary>
+        /// Gets or sets the primary role of the user (e.g., Admin, Coordinator, Volunteer).
         /// </summary>
         [Required]
         public string Role { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Gets or sets the operational roles of the user (comma-separated).
+        /// Examples: "InventoryManager,RoutePlanner" or "Driver,KitchenVolunteer"
+        /// </summary>
+        public string OperationalRoles { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Gets or sets whether the user is a staff member (true) or volunteer (false).
+        /// </summary>
+        public bool IsStaff { get; set; } = false;
+
+        /// <summary>
+        /// Gets or sets whether the user is active.
+        /// </summary>
+        public bool IsActive { get; set; } = true;
 
         /// <summary>
         /// Gets or sets the date and time when the user was created.

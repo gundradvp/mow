@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace MOWScheduler.DTOs.Volunteer
@@ -20,6 +21,12 @@ namespace MOWScheduler.DTOs.Volunteer
         [Required]
         [StringLength(100, MinimumLength = 6)]
         public string Password { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Gets or sets the operational roles for this volunteer (comma-separated).
+        /// Examples: "Driver", "KitchenVolunteer", "Packer"
+        /// </summary>
+        public string OperationalRoles { get; set; } = string.Empty;
 
         // Personal Information
         [Required]

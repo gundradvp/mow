@@ -1,0 +1,1352 @@
+import uuid
+from datetime import datetime, date, time
+from typing import List, Optional, Union, Any
+from decimal import Decimal
+from enum import Enum as PyEnum # To avoid conflict with sqlalchemy.Enum
+
+from sqlalchemy import create_engine, Column, String, Text, ForeignKey, Integer, DateTime, Date, Time, Boolean, Numeric, UniqueConstraint, CheckConstraint, Enum as SQLEnum, ForeignKeyConstraint
+from sqlalchemy.orm import sessionmaker, relationship, declarative_base, Mapped, mapped_column
+from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
+from sqlalchemy.sql import func
+
+from pydantic import BaseModel, Field, EmailStr, condecimal, field_validator, ConfigDict
+
+# --- Database Setup ---
+# IMPORTANT: Replace with your actual Azure SQL Database connection string
+SQLALCHEMY_DATABASE_URL = "mssql+pyodbc://user:password@your_server_name.database.windows.net/your_database_name?driver=ODBC+Driver+17+for+SQL+Server"
+# SQLALCHEMY_DATABASE_URL = "sqlite:///./mow_inventory.db" # Fallback for local testing
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=False) # Set echo=True for debugging SQL
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# --- Pydantic Utility ---
+PyUUID = uuid.UUID
+
+# --- Enums (mirroring potential controlled vocabularies) ---
+# These can be used in Pydantic models for validation and in SQLAlchemy models with SQLEnum
+# Example:
+class UserRoleEnum(str, PyEnum):
+    ADMIN = "admin"
+    INVENTORY_MANAGER = "inventory_manager"
+    KITCHEN_STAFF = "kitchen_staff"
+    DRIVER = "driver"
+    PACKER = "packer"
+    ROUTE_PLANNER = "route_planner"
+
+class PurchaseOrderStatusEnum(str, PyEnum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted" # Assuming a status between draft and completed
+    COMPLETED = "completed" # From vw_InventoryValuation
+    CANCELLED = "cancelled"
+
+class PaymentStatusEnum(str, PyEnum):
+    UNPAID = "unpaid"
+    PAID = "paid"
+    PARTIALLY_PAID = "partially_paid"
+
+class DeliveryStatusEnum(str, PyEnum):
+    PLANNED = "planned"
+    IN_PROGRESS = "in-progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    RESCHEDULED = "rescheduled"
+
+class DeliveryItemStatusEnum(str, PyEnum):
+    SCHEDULED = "scheduled"
+    DELIVERED = "delivered" # Assuming this is a common status
+    UNDELIVERED = "undelivered" # Assuming this is a common status
+
+class TransactionTypeEnum(str, PyEnum):
+    RECEIPT = "receipt" # From PO
+    CONSUMPTION = "consumption" # For meal prep
+    ADJUSTMENT_IN = "adjustment_in" # Manual increase
+    ADJUSTMENT_OUT = "adjustment_out" # Manual decrease (spoilage, etc.)
+    DONATION_IN = "donation_in"
+
+class VehicleStatusEnum(str, PyEnum):
+    AVAILABLE = "available"
+    IN_USE = "in-use"
+    MAINTENANCE = "maintenance"
+    RETIRED = "retired"
+
+class BoxStatusEnum(str, PyEnum):
+    AVAILABLE = "available"
+    IN_USE = "in-use"
+    CLEANING = "cleaning"
+    DAMAGED = "damaged"
+    RETIRED = "retired"
+
+class PackingSheetStatusEnum(str, PyEnum):
+    DRAFT = "draft"
+    IN_PROGRESS = "in-progress"
+    COMPLETED = "completed"
+    VERIFIED = "verified"
+
+class PackedBoxStatusEnum(str, PyEnum):
+    PACKED = "packed"
+    LOADED = "loaded"
+    DELIVERED = "delivered"
+    RETURNED = "returned"
+
+class LoadingSheetStatusEnum(str, PyEnum):
+    PENDING = "pending"
+    IN_PROGRESS = "in-progress"
+    COMPLETED = "completed"
+
+class PrintStatusEnum(str, PyEnum):
+    PENDING = "pending"
+    PRINTED = "printed"
+    REPRINTED = "reprinted"
+    ERROR = "error"
+
+# --- SQLAlchemy Models ---
+
+class Category(Base):
+    __tablename__ = "Category"
+    category_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    parent_category_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Category.category_id"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    parent_category = relationship("Category", remote_side=[category_id], backref="sub_categories")
+    inventory_items = relationship("InventoryItem", back_populates="category")
+    donations = relationship("Donation", back_populates="category")
+
+class Facility(Base):
+    __tablename__ = "Facility"
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str] = mapped_column(String(50), nullable=False)
+    state: Mapped[str] = mapped_column(String(2), nullable=False, default='CA')
+    zip_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False) # Consider UniqueConstraint
+    capacity: Mapped[Optional[int]] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    storage_locations = relationship("StorageLocation", back_populates="facility")
+    users = relationship("User", back_populates="facility")
+    service_routes = relationship("ServiceRoute", back_populates="facility")
+    meal_preparations = relationship("MealPreparation", back_populates="facility")
+    vehicles = relationship("Vehicle", back_populates="facility")
+    boxes = relationship("Box", foreign_keys="[Box.current_location_id]", back_populates="current_location")
+    packing_sheets = relationship("PackingSheet", back_populates="facility")
+
+class StorageLocation(Base):
+    __tablename__ = "StorageLocation"
+    storage_location_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    capacity: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    temperature_range: Mapped[Optional[str]] = mapped_column(String(50))
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    facility = relationship("Facility", back_populates="storage_locations")
+    inventory_items = relationship("InventoryItem", back_populates="storage_location")
+
+class InventoryItem(Base):
+    __tablename__ = "InventoryItem"
+    inventory_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    category_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Category.category_id"), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    unit_of_measure: Mapped[str] = mapped_column(String(20), nullable=False)
+    current_quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal(0))
+    minimum_quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal(0))
+    maximum_quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal(0))
+    avg_consumption_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    barcode: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
+    storage_location_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("StorageLocation.storage_location_id"), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    category = relationship("Category", back_populates="inventory_items")
+    storage_location = relationship("StorageLocation", back_populates="inventory_items")
+    purchase_order_items = relationship("PurchaseOrderItem", back_populates="inventory_item")
+    meal_ingredients = relationship("MealIngredient", back_populates="inventory_item")
+    meal_prep_consumptions = relationship("MealPrepConsumption", back_populates="inventory_item")
+    inventory_transactions = relationship("InventoryTransaction", back_populates="inventory_item")
+    donations = relationship("Donation", back_populates="inventory_item")
+
+    __table_args__ = (
+        CheckConstraint('current_quantity >= 0', name='CK_InventoryItem_CurrentQuantityPositive'),
+        CheckConstraint('minimum_quantity >= 0', name='CK_InventoryItem_MinQuantityPositive'),
+        CheckConstraint('maximum_quantity >= minimum_quantity', name='CK_InventoryItem_MaxGreaterThanMin'),
+    )
+
+class User(Base):
+    __tablename__ = "User"
+    user_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    first_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[UserRoleEnum] = mapped_column(SQLEnum(UserRoleEnum, name="user_role_enum"), nullable=False)
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"), nullable=False)
+    is_driver: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    driver_license: Mapped[Optional[str]] = mapped_column(String(50))
+    driver_license_expiry: Mapped[Optional[date]] = mapped_column(Date)
+    available_start_time: Mapped[Optional[time]] = mapped_column(Time)
+    available_end_time: Mapped[Optional[time]] = mapped_column(Time)
+    available_days: Mapped[Optional[str]] = mapped_column(String(50))
+    max_route_distance: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    max_route_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    facility = relationship("Facility", back_populates="users")
+    purchase_orders_created = relationship("PurchaseOrder", foreign_keys="[PurchaseOrder.created_by]", back_populates="created_by_user")
+    meal_preparations_created = relationship("MealPreparation", foreign_keys="[MealPreparation.created_by]", back_populates="created_by_user")
+    deliveries_driven = relationship("Delivery", foreign_keys="[Delivery.driver_user_id]", back_populates="driver")
+    inventory_transactions_logged = relationship("InventoryTransaction", foreign_keys="[InventoryTransaction.user_id]", back_populates="user")
+    donations_received = relationship("Donation", foreign_keys="[Donation.received_by]", back_populates="received_by_user")
+    packing_sheets_completed = relationship("PackingSheet", foreign_keys="[PackingSheet.completed_by]", back_populates="completed_by_user")
+    packing_sheets_verified = relationship("PackingSheet", foreign_keys="[PackingSheet.verified_by]", back_populates="verified_by_user")
+    packed_boxes_packed = relationship("PackedBox", foreign_keys="[PackedBox.packed_by]", back_populates="packed_by_user")
+    loading_sheets_loaded = relationship("LoadingSheet", foreign_keys="[LoadingSheet.loaded_by]", back_populates="loaded_by_user")
+    loading_sheets_verified = relationship("LoadingSheet", foreign_keys="[LoadingSheet.verified_by]", back_populates="verified_by_user")
+
+    __table_args__ = (UniqueConstraint('email', name='UQ_User_Email'),)
+
+class ServiceRoute(Base):
+    __tablename__ = "ServiceRoute"
+    route_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"), nullable=False)
+    estimated_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    estimated_distance_miles: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    route_sequence_data: Mapped[Optional[str]] = mapped_column(Text) # JSON data
+    zip_codes_covered: Mapped[Optional[str]] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    facility = relationship("Facility", back_populates="service_routes")
+    care_recipients = relationship("CareRecipient", back_populates="service_route")
+    deliveries = relationship("Delivery", back_populates="route")
+
+class CareRecipient(Base):
+    __tablename__ = "CareRecipient"
+    cr_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    first_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str] = mapped_column(String(50), nullable=False)
+    state: Mapped[str] = mapped_column(String(2), nullable=False, default='CA')
+    zip_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(100))
+    birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    emergency_contact: Mapped[str] = mapped_column(String(100), nullable=False)
+    emergency_phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    dietary_restrictions: Mapped[Optional[str]] = mapped_column(Text)
+    allergies: Mapped[Optional[str]] = mapped_column(Text)
+    service_route_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("ServiceRoute.route_id"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='active') # Consider Enum
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    special_instructions: Mapped[Optional[str]] = mapped_column(Text)
+    accessibility_notes: Mapped[Optional[str]] = mapped_column(Text)
+    preferred_delivery_time: Mapped[Optional[str]] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    service_route = relationship("ServiceRoute", back_populates="care_recipients")
+    delivery_items = relationship("DeliveryItem", back_populates="care_recipient")
+    packed_box_items = relationship("PackedBoxItem", back_populates="care_recipient")
+
+
+class Supplier(Base):
+    __tablename__ = "Supplier"
+    supplier_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    contact_person: Mapped[str] = mapped_column(String(100), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str] = mapped_column(String(50), nullable=False)
+    state: Mapped[str] = mapped_column(String(2), nullable=False, default='CA')
+    zip_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    account_number: Mapped[Optional[str]] = mapped_column(String(50))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    purchase_orders = relationship("PurchaseOrder", back_populates="supplier")
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "PurchaseOrder"
+    po_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    supplier_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Supplier.supplier_id"), nullable=False)
+    order_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=func.current_date())
+    expected_delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[PurchaseOrderStatusEnum] = mapped_column(SQLEnum(PurchaseOrderStatusEnum, name="po_status_enum"), nullable=False, default=PurchaseOrderStatusEnum.DRAFT)
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal(0))
+    payment_terms: Mapped[Optional[str]] = mapped_column(String(50))
+    payment_status: Mapped[PaymentStatusEnum] = mapped_column(SQLEnum(PaymentStatusEnum, name="payment_status_enum"), nullable=False, default=PaymentStatusEnum.UNPAID)
+    shipping_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal(0))
+    created_by: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    supplier = relationship("Supplier", back_populates="purchase_orders")
+    created_by_user = relationship("User", foreign_keys=[created_by], back_populates="purchase_orders_created")
+    purchase_order_items = relationship("PurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan")
+    inventory_transactions = relationship("InventoryTransaction", back_populates="purchase_order")
+
+    __table_args__ = (
+        CheckConstraint('total_amount >= 0', name='CK_PurchaseOrder_TotalAmountPositive'),
+        CheckConstraint('shipping_cost >= 0', name='CK_PurchaseOrder_ShippingCostPositive'),
+    )
+
+class PurchaseOrderItem(Base):
+    __tablename__ = "PurchaseOrderItem"
+    po_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    po_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PurchaseOrder.po_id"), nullable=False)
+    inventory_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("InventoryItem.inventory_item_id"), nullable=False)
+    quantity_ordered: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    quantity_received: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal(0))
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False) # Should be calculated: quantity_ordered * unit_price
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    purchase_order = relationship("PurchaseOrder", back_populates="purchase_order_items")
+    inventory_item = relationship("InventoryItem", back_populates="purchase_order_items")
+
+    __table_args__ = (
+        CheckConstraint('quantity_ordered > 0', name='CK_PurchaseOrderItem_QuantityOrderedPositive'),
+        CheckConstraint('unit_price >= 0', name='CK_PurchaseOrderItem_UnitPricePositive'),
+        CheckConstraint('quantity_received >= 0', name='CK_PurchaseOrderItem_QuantityReceivedPositive'),
+    )
+
+class Meal(Base):
+    __tablename__ = "Meal"
+    meal_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    meal_type: Mapped[str] = mapped_column(String(20), nullable=False) # E.g., Regular, Vegetarian, Diabetic
+    calories: Mapped[Optional[int]] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    meal_ingredients = relationship("MealIngredient", back_populates="meal", cascade="all, delete-orphan")
+    meal_preparations = relationship("MealPreparation", back_populates="meal")
+
+class MealIngredient(Base):
+    __tablename__ = "MealIngredient"
+    meal_ingredient_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meal_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Meal.meal_id"), nullable=False)
+    inventory_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("InventoryItem.inventory_item_id"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False) # Quantity of inventory item per meal
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    meal = relationship("Meal", back_populates="meal_ingredients")
+    inventory_item = relationship("InventoryItem", back_populates="meal_ingredients")
+
+    __table_args__ = (CheckConstraint('quantity > 0', name='CK_MealIngredient_QuantityPositive'),)
+
+class MealPreparation(Base):
+    __tablename__ = "MealPreparation"
+    meal_prep_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meal_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Meal.meal_id"), nullable=False)
+    prep_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False) # Number of meals prepared
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='planned') # E.g., planned, in-progress, completed
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    meal = relationship("Meal", back_populates="meal_preparations")
+    facility = relationship("Facility", back_populates="meal_preparations")
+    created_by_user = relationship("User", foreign_keys=[created_by], back_populates="meal_preparations_created")
+    meal_prep_consumptions = relationship("MealPrepConsumption", back_populates="meal_preparation", cascade="all, delete-orphan")
+    delivery_items = relationship("DeliveryItem", back_populates="meal_preparation")
+    packed_box_items = relationship("PackedBoxItem", back_populates="meal_preparation")
+    inventory_transactions = relationship("InventoryTransaction", back_populates="meal_preparation")
+
+
+    __table_args__ = (CheckConstraint('quantity > 0', name='CK_MealPreparation_QuantityPositive'),)
+
+class MealPrepConsumption(Base):
+    __tablename__ = "MealPrepConsumption"
+    consumption_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meal_prep_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("MealPreparation.meal_prep_id"), nullable=False)
+    inventory_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("InventoryItem.inventory_item_id"), nullable=False)
+    quantity_used: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+
+    meal_preparation = relationship("MealPreparation", back_populates="meal_prep_consumptions")
+    inventory_item = relationship("InventoryItem", back_populates="meal_prep_consumptions")
+
+    __table_args__ = (CheckConstraint('quantity_used > 0', name='CK_MealPrepConsumption_QuantityUsedPositive'),)
+
+class Vehicle(Base):
+    __tablename__ = "Vehicle"
+    vehicle_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    vehicle_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    license_plate: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    vehicle_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    capacity_cubic_feet: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    max_weight_lbs: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"), nullable=False)
+    status: Mapped[VehicleStatusEnum] = mapped_column(SQLEnum(VehicleStatusEnum, name="vehicle_status_enum"), nullable=False, default=VehicleStatusEnum.AVAILABLE)
+    maintenance_due_date: Mapped[Optional[date]] = mapped_column(Date)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    facility = relationship("Facility", back_populates="vehicles")
+    deliveries = relationship("Delivery", back_populates="vehicle")
+
+
+class Delivery(Base):
+    __tablename__ = "Delivery"
+    delivery_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    route_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("ServiceRoute.route_id"), nullable=False)
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    driver_user_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"), nullable=False)
+    status: Mapped[DeliveryStatusEnum] = mapped_column(SQLEnum(DeliveryStatusEnum, name="delivery_status_enum"), nullable=False, default=DeliveryStatusEnum.PLANNED)
+    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime) # Changed from DATETIME2 to DateTime for SQLAlchemy
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    vehicle_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Vehicle.vehicle_id"))
+    actual_mileage: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    departure_checklist_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    return_checklist_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    route = relationship("ServiceRoute", back_populates="deliveries")
+    driver = relationship("User", foreign_keys=[driver_user_id], back_populates="deliveries_driven")
+    vehicle = relationship("Vehicle", back_populates="deliveries")
+    delivery_items = relationship("DeliveryItem", back_populates="delivery", cascade="all, delete-orphan")
+    packed_boxes = relationship("PackedBox", back_populates="delivery")
+    loading_sheets = relationship("LoadingSheet", back_populates="delivery", cascade="all, delete-orphan")
+
+
+    __table_args__ = (CheckConstraint('end_time IS NULL OR start_time IS NULL OR end_time >= start_time', name='CK_Delivery_Times'),)
+
+class DeliveryItem(Base):
+    __tablename__ = "DeliveryItem"
+    delivery_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    delivery_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Delivery.delivery_id"), nullable=False)
+    cr_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("CareRecipient.cr_id"), nullable=False)
+    meal_prep_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("MealPreparation.meal_prep_id"), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[DeliveryItemStatusEnum] = mapped_column(SQLEnum(DeliveryItemStatusEnum, name="delivery_item_status_enum"), nullable=False, default=DeliveryItemStatusEnum.SCHEDULED)
+    delivery_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    delivery_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    delivery_notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    delivery = relationship("Delivery", back_populates="delivery_items")
+    care_recipient = relationship("CareRecipient", back_populates="delivery_items")
+    meal_preparation = relationship("MealPreparation", back_populates="delivery_items")
+    packed_box_items = relationship("PackedBoxItem", back_populates="delivery_item")
+
+
+    __table_args__ = (CheckConstraint('quantity > 0', name='CK_DeliveryItem_QuantityPositive'),)
+
+class InventoryTransaction(Base):
+    __tablename__ = "InventoryTransaction"
+    transaction_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    inventory_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("InventoryItem.inventory_item_id"), nullable=False)
+    transaction_type: Mapped[TransactionTypeEnum] = mapped_column(SQLEnum(TransactionTypeEnum, name="transaction_type_enum"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False) # Can be positive or negative for adjustments
+    transaction_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    po_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PurchaseOrder.po_id"))
+    meal_prep_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("MealPreparation.meal_prep_id"))
+    user_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"), nullable=False) # User who logged/caused transaction
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime()) # Redundant with transaction_date? SQL schema has it.
+
+    inventory_item = relationship("InventoryItem", back_populates="inventory_transactions")
+    purchase_order = relationship("PurchaseOrder", back_populates="inventory_transactions")
+    meal_preparation = relationship("MealPreparation", back_populates="inventory_transactions")
+    user = relationship("User", foreign_keys=[user_id], back_populates="inventory_transactions_logged")
+
+
+class Donation(Base):
+    __tablename__ = "Donation"
+    donation_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    donor_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    donation_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=func.current_date())
+    inventory_item_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("InventoryItem.inventory_item_id")) # If donating a specific item
+    category_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Category.category_id")) # If donating to a category
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    estimated_value: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    received_by: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    inventory_item = relationship("InventoryItem", back_populates="donations")
+    category = relationship("Category", back_populates="donations")
+    received_by_user = relationship("User", foreign_keys=[received_by], back_populates="donations_received")
+
+    __table_args__ = (
+        CheckConstraint('quantity > 0', name='CK_Donation_QuantityPositive'),
+        CheckConstraint('estimated_value >= 0', name='CK_Donation_EstimatedValuePositive'),
+    )
+
+class BoxType(Base):
+    __tablename__ = "BoxType"
+    box_type_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    length_inches: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    width_inches: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    height_inches: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    max_weight_lbs: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    insulated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    color: Mapped[Optional[str]] = mapped_column(String(30))
+    is_reusable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    capacity_meal_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    boxes = relationship("Box", back_populates="box_type")
+    packed_boxes = relationship("PackedBox", back_populates="box_type")
+
+
+class Box(Base):
+    __tablename__ = "Box"
+    box_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    box_type_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("BoxType.box_type_id"), nullable=False)
+    barcode: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
+    status: Mapped[BoxStatusEnum] = mapped_column(SQLEnum(BoxStatusEnum, name="box_status_enum"), nullable=False, default=BoxStatusEnum.AVAILABLE)
+    current_location_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"))
+    last_sanitized_date: Mapped[Optional[date]] = mapped_column(Date)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    box_type = relationship("BoxType", back_populates="boxes")
+    current_location = relationship("Facility", foreign_keys=[current_location_id], back_populates="boxes")
+    packed_boxes = relationship("PackedBox", back_populates="box")
+
+
+class PackingSheet(Base):
+    __tablename__ = "PackingSheet"
+    packing_sheet_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    packing_date: Mapped[date] = mapped_column(Date, nullable=False)
+    facility_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Facility.facility_id"), nullable=False)
+    status: Mapped[PackingSheetStatusEnum] = mapped_column(SQLEnum(PackingSheetStatusEnum, name="packing_sheet_status_enum"), nullable=False, default=PackingSheetStatusEnum.DRAFT)
+    total_meals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_boxes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_by: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"))
+    verified_by: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    facility = relationship("Facility", back_populates="packing_sheets")
+    completed_by_user = relationship("User", foreign_keys=[completed_by], back_populates="packing_sheets_completed")
+    verified_by_user = relationship("User", foreign_keys=[verified_by], back_populates="packing_sheets_verified")
+    packed_boxes = relationship("PackedBox", back_populates="packing_sheet", cascade="all, delete-orphan")
+
+
+class PackedBox(Base):
+    __tablename__ = "PackedBox"
+    packed_box_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    packing_sheet_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PackingSheet.packing_sheet_id"), nullable=False)
+    box_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Box.box_id")) # Null if disposable
+    box_type_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("BoxType.box_type_id"), nullable=False)
+    delivery_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Delivery.delivery_id"))
+    label_printed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    label_print_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    packed_by: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"))
+    status: Mapped[PackedBoxStatusEnum] = mapped_column(SQLEnum(PackedBoxStatusEnum, name="packed_box_status_enum"), nullable=False, default=PackedBoxStatusEnum.PACKED)
+    temperature_at_packing: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    packing_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    packing_sheet = relationship("PackingSheet", back_populates="packed_boxes")
+    box = relationship("Box", back_populates="packed_boxes")
+    box_type = relationship("BoxType", back_populates="packed_boxes")
+    delivery = relationship("Delivery", back_populates="packed_boxes")
+    packed_by_user = relationship("User", foreign_keys=[packed_by], back_populates="packed_boxes_packed")
+    packed_box_items = relationship("PackedBoxItem", back_populates="packed_box", cascade="all, delete-orphan")
+    loading_sheet_items = relationship("LoadingSheetItem", back_populates="packed_box")
+    box_labels = relationship("BoxLabel", back_populates="packed_box", cascade="all, delete-orphan")
+
+
+class PackedBoxItem(Base):
+    __tablename__ = "PackedBoxItem"
+    packed_box_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    packed_box_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PackedBox.packed_box_id"), nullable=False)
+    meal_prep_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("MealPreparation.meal_prep_id"), nullable=False)
+    cr_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("CareRecipient.cr_id"), nullable=False)
+    delivery_item_id: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("DeliveryItem.delivery_item_id")) # Links back to the specific delivery stop
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    special_instructions: Mapped[Optional[str]] = mapped_column(Text)
+    position_in_box: Mapped[Optional[str]] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    packed_box = relationship("PackedBox", back_populates="packed_box_items")
+    meal_preparation = relationship("MealPreparation", back_populates="packed_box_items")
+    care_recipient = relationship("CareRecipient", back_populates="packed_box_items")
+    delivery_item = relationship("DeliveryItem", back_populates="packed_box_items")
+    meal_labels = relationship("MealLabel", back_populates="packed_box_item", cascade="all, delete-orphan")
+
+
+class LoadingSheet(Base):
+    __tablename__ = "LoadingSheet"
+    loading_sheet_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    delivery_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("Delivery.delivery_id"), nullable=False)
+    status: Mapped[LoadingSheetStatusEnum] = mapped_column(SQLEnum(LoadingSheetStatusEnum, name="loading_sheet_status_enum"), nullable=False, default=LoadingSheetStatusEnum.PENDING)
+    loading_start_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    loading_end_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    loaded_by: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"))
+    verified_by: Mapped[Optional[PyUUID]] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("User.user_id"))
+    total_boxes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    loading_dock: Mapped[Optional[str]] = mapped_column(String(20))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    delivery = relationship("Delivery", back_populates="loading_sheets")
+    loaded_by_user = relationship("User", foreign_keys=[loaded_by], back_populates="loading_sheets_loaded")
+    verified_by_user = relationship("User", foreign_keys=[verified_by], back_populates="loading_sheets_verified")
+    loading_sheet_items = relationship("LoadingSheetItem", back_populates="loading_sheet", cascade="all, delete-orphan")
+
+
+class LoadingSheetItem(Base):
+    __tablename__ = "LoadingSheetItem"
+    loading_sheet_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loading_sheet_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("LoadingSheet.loading_sheet_id"), nullable=False)
+    packed_box_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PackedBox.packed_box_id"), nullable=False)
+    loading_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    loading_zone: Mapped[Optional[str]] = mapped_column(String(20))
+    is_loaded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    loading_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    loading_sheet = relationship("LoadingSheet", back_populates="loading_sheet_items")
+    packed_box = relationship("PackedBox", back_populates="loading_sheet_items")
+
+
+class MealLabel(Base):
+    __tablename__ = "MealLabel"
+    meal_label_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    packed_box_item_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PackedBoxItem.packed_box_item_id"), nullable=False)
+    label_template: Mapped[str] = mapped_column(String(50), nullable=False) # Name/ID of the template used
+    print_status: Mapped[PrintStatusEnum] = mapped_column(SQLEnum(PrintStatusEnum, name="print_status_enum"), nullable=False, default=PrintStatusEnum.PENDING)
+    print_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    print_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    packed_box_item = relationship("PackedBoxItem", back_populates="meal_labels")
+
+
+class BoxLabel(Base):
+    __tablename__ = "BoxLabel"
+    box_label_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    packed_box_id: Mapped[PyUUID] = mapped_column(UNIQUEIDENTIFIER(as_uuid=True), ForeignKey("PackedBox.packed_box_id"), nullable=False)
+    label_template: Mapped[str] = mapped_column(String(50), nullable=False)
+    print_status: Mapped[PrintStatusEnum] = mapped_column(SQLEnum(PrintStatusEnum, name="print_status_enum_boxlabel"), nullable=False, default=PrintStatusEnum.PENDING) # Ensure unique enum name if needed for DB
+    print_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    print_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.sysdatetime(), onupdate=func.sysdatetime())
+
+    packed_box = relationship("PackedBox", back_populates="box_labels")
+
+# Note: RouteLabel table was incomplete in the SQL schema and is omitted here.
+
+# --- Pydantic Schemas (JSON Layer) ---
+# Using model_config = ConfigDict(from_attributes=True) for Pydantic V2
+
+# Category Schemas
+class CategoryBase(BaseModel):
+    name: str = Field(max_length=50)
+    description: Optional[str] = None
+    parent_category_id: Optional[PyUUID] = None
+    is_active: bool = True
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryUpdate(BaseModel): # For PATCH, all fields optional
+    name: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = None
+    parent_category_id: Optional[PyUUID] = None
+    is_active: Optional[bool] = None
+
+class CategorySchema(CategoryBase):
+    category_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class CategoryWithSubcategories(CategorySchema):
+    sub_categories: List['CategorySchema'] = []
+
+
+# Facility Schemas
+class FacilityBase(BaseModel):
+    name: str = Field(max_length=100)
+    address: str
+    city: str = Field(max_length=50)
+    state: str = Field(default='CA', max_length=2)
+    zip_code: str = Field(max_length=10)
+    phone: str = Field(max_length=20)
+    email: EmailStr
+    capacity: Optional[int] = Field(None, ge=0)
+    is_active: bool = True
+
+class FacilityCreate(FacilityBase):
+    pass
+
+class FacilityUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=50)
+    state: Optional[str] = Field(None, max_length=2)
+    zip_code: Optional[str] = Field(None, max_length=10)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[EmailStr] = None
+    capacity: Optional[int] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+
+class FacilitySchema(FacilityBase):
+    facility_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# StorageLocation Schemas
+class StorageLocationBase(BaseModel):
+    name: str = Field(max_length=50)
+    type: str = Field(max_length=20)
+    description: Optional[str] = None
+    capacity: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    temperature_range: Optional[str] = Field(None, max_length=50)
+    facility_id: PyUUID
+    is_active: bool = True
+
+class StorageLocationCreate(StorageLocationBase):
+    pass
+
+class StorageLocationUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=50)
+    type: Optional[str] = Field(None, max_length=20)
+    description: Optional[str] = None
+    capacity: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    temperature_range: Optional[str] = Field(None, max_length=50)
+    facility_id: Optional[PyUUID] = None
+    is_active: Optional[bool] = None
+
+class StorageLocationSchema(StorageLocationBase):
+    storage_location_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class StorageLocationWithFacility(StorageLocationSchema):
+    facility: Optional[FacilitySchema] = None
+
+
+# InventoryItem Schemas
+class InventoryItemBase(BaseModel):
+    item_name: str = Field(max_length=100)
+    category_id: PyUUID
+    description: Optional[str] = None
+    unit_of_measure: str = Field(max_length=20)
+    current_quantity: condecimal(max_digits=10, decimal_places=2) = Field(default=Decimal(0), ge=Decimal(0))
+    minimum_quantity: condecimal(max_digits=10, decimal_places=2) = Field(default=Decimal(0), ge=Decimal(0))
+    maximum_quantity: condecimal(max_digits=10, decimal_places=2) = Field(default=Decimal(0), ge=Decimal(0))
+    avg_consumption_rate: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    barcode: Optional[str] = Field(None, max_length=50)
+    storage_location_id: PyUUID
+    is_active: bool = True
+
+    @field_validator('maximum_quantity')
+    def max_quantity_ge_min_quantity(cls, v, values):
+        # Pydantic v2 uses model_fields_set and data
+        min_q_val = values.data.get('minimum_quantity')
+        if min_q_val is not None and v < min_q_val:
+            raise ValueError('maximum_quantity must be greater than or equal to minimum_quantity')
+        return v
+
+class InventoryItemCreate(InventoryItemBase):
+    pass
+
+class InventoryItemUpdate(BaseModel):
+    item_name: Optional[str] = Field(None, max_length=100)
+    category_id: Optional[PyUUID] = None
+    description: Optional[str] = None
+    unit_of_measure: Optional[str] = Field(None, max_length=20)
+    current_quantity: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    minimum_quantity: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    maximum_quantity: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    avg_consumption_rate: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    barcode: Optional[str] = Field(None, max_length=50)
+    storage_location_id: Optional[PyUUID] = None
+    is_active: Optional[bool] = None
+
+    @field_validator('maximum_quantity')
+    def max_quantity_ge_min_quantity_update(cls, v, values):
+        min_q_val = values.data.get('minimum_quantity')
+        # If minimum_quantity is not being updated, we might need to fetch it or handle differently
+        # For simplicity, this validator works if minimum_quantity is also part of the update or already set
+        if min_q_val is not None and v < min_q_val:
+            raise ValueError('maximum_quantity must be greater than or equal to minimum_quantity')
+        return v
+
+class InventoryItemSchema(InventoryItemBase):
+    inventory_item_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class InventoryItemWithDetails(InventoryItemSchema):
+    category: Optional[CategorySchema] = None
+    storage_location: Optional[StorageLocationSchema] = None
+
+
+# User Schemas
+class UserBase(BaseModel):
+    first_name: str = Field(max_length=50)
+    last_name: str = Field(max_length=50)
+    email: EmailStr = Field(max_length=100)
+    phone: str = Field(max_length=20)
+    role: UserRoleEnum
+    facility_id: PyUUID
+    is_driver: bool = False
+    driver_license: Optional[str] = Field(None, max_length=50)
+    driver_license_expiry: Optional[date] = None
+    available_start_time: Optional[time] = None
+    available_end_time: Optional[time] = None
+    available_days: Optional[str] = Field(None, max_length=50) # E.g., "Mon,Tue,Wed"
+    max_route_distance: Optional[condecimal(max_digits=8, decimal_places=2)] = Field(None, ge=Decimal(0))
+    max_route_duration_minutes: Optional[int] = Field(None, ge=0)
+    is_active: bool = True
+
+class UserCreate(UserBase):
+    pass # Add password field if managing passwords: password: str
+
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = Field(None, max_length=50)
+    last_name: Optional[str] = Field(None, max_length=50)
+    email: Optional[EmailStr] = Field(None, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    role: Optional[UserRoleEnum] = None
+    facility_id: Optional[PyUUID] = None
+    is_driver: Optional[bool] = None
+    driver_license: Optional[str] = Field(None, max_length=50)
+    driver_license_expiry: Optional[date] = None
+    available_start_time: Optional[time] = None
+    available_end_time: Optional[time] = None
+    available_days: Optional[str] = Field(None, max_length=50)
+    max_route_distance: Optional[condecimal(max_digits=8, decimal_places=2)] = Field(None, ge=Decimal(0))
+    max_route_duration_minutes: Optional[int] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+    # Add password update logic if applicable
+
+class UserSchema(UserBase):
+    user_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ServiceRoute Schemas
+class ServiceRouteBase(BaseModel):
+    name: str = Field(max_length=50)
+    description: Optional[str] = None
+    facility_id: PyUUID
+    estimated_duration_minutes: Optional[int] = Field(None, ge=0)
+    estimated_distance_miles: Optional[condecimal(max_digits=8, decimal_places=2)] = Field(None, ge=Decimal(0))
+    route_sequence_data: Optional[Any] = None # For JSON data
+    zip_codes_covered: Optional[str] = Field(None, max_length=255)
+    is_active: bool = True
+
+class ServiceRouteCreate(ServiceRouteBase):
+    pass
+
+class ServiceRouteUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = None
+    facility_id: Optional[PyUUID] = None
+    estimated_duration_minutes: Optional[int] = Field(None, ge=0)
+    estimated_distance_miles: Optional[condecimal(max_digits=8, decimal_places=2)] = Field(None, ge=Decimal(0))
+    route_sequence_data: Optional[Any] = None
+    zip_codes_covered: Optional[str] = Field(None, max_length=255)
+    is_active: Optional[bool] = None
+
+class ServiceRouteSchema(ServiceRouteBase):
+    route_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# CareRecipient Schemas
+class CareRecipientBase(BaseModel):
+    first_name: str = Field(max_length=50)
+    last_name: str = Field(max_length=50)
+    address: str
+    city: str = Field(max_length=50)
+    state: str = Field(default='CA', max_length=2)
+    zip_code: str = Field(max_length=10)
+    phone: str = Field(max_length=20)
+    email: Optional[EmailStr] = Field(None, max_length=100)
+    birth_date: date
+    emergency_contact: str = Field(max_length=100)
+    emergency_phone: str = Field(max_length=20)
+    dietary_restrictions: Optional[str] = None
+    allergies: Optional[str] = None
+    service_route_id: Optional[PyUUID] = None
+    status: str = Field(default='active', max_length=20)
+    notes: Optional[str] = None
+    special_instructions: Optional[str] = None
+    accessibility_notes: Optional[str] = None
+    preferred_delivery_time: Optional[str] = Field(None, max_length=50)
+
+class CareRecipientCreate(CareRecipientBase):
+    pass
+
+class CareRecipientUpdate(BaseModel):
+    first_name: Optional[str] = Field(None, max_length=50)
+    last_name: Optional[str] = Field(None, max_length=50)
+    # ... all other fields optional
+    address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=50)
+    state: Optional[str] = Field(None, max_length=2)
+    zip_code: Optional[str] = Field(None, max_length=10)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[EmailStr] = Field(None, max_length=100)
+    birth_date: Optional[date] = None
+    emergency_contact: Optional[str] = Field(None, max_length=100)
+    emergency_phone: Optional[str] = Field(None, max_length=20)
+    dietary_restrictions: Optional[str] = None
+    allergies: Optional[str] = None
+    service_route_id: Optional[PyUUID] = None
+    status: Optional[str] = Field(None, max_length=20)
+    notes: Optional[str] = None
+    special_instructions: Optional[str] = None
+    accessibility_notes: Optional[str] = None
+    preferred_delivery_time: Optional[str] = Field(None, max_length=50)
+
+class CareRecipientSchema(CareRecipientBase):
+    cr_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Supplier Schemas
+class SupplierBase(BaseModel):
+    name: str = Field(max_length=100)
+    contact_person: str = Field(max_length=100)
+    phone: str = Field(max_length=20)
+    email: EmailStr = Field(max_length=100)
+    address: str
+    city: str = Field(max_length=50)
+    state: str = Field(default='CA', max_length=2)
+    zip_code: str = Field(max_length=10)
+    account_number: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = None
+    is_active: bool = True
+
+class SupplierCreate(SupplierBase):
+    pass
+
+class SupplierUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    # ... all other fields optional
+    contact_person: Optional[str] = Field(None, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[EmailStr] = Field(None, max_length=100)
+    address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=50)
+    state: Optional[str] = Field(None, max_length=2)
+    zip_code: Optional[str] = Field(None, max_length=10)
+    account_number: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class SupplierSchema(SupplierBase):
+    supplier_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# PurchaseOrder Schemas
+class PurchaseOrderBase(BaseModel):
+    supplier_id: PyUUID
+    order_date: date = Field(default_factory=date.today)
+    expected_delivery_date: date
+    status: PurchaseOrderStatusEnum = PurchaseOrderStatusEnum.DRAFT
+    total_amount: condecimal(max_digits=10, decimal_places=2) = Field(default=Decimal(0), ge=Decimal(0))
+    payment_terms: Optional[str] = Field(None, max_length=50)
+    payment_status: PaymentStatusEnum = PaymentStatusEnum.UNPAID
+    shipping_cost: condecimal(max_digits=10, decimal_places=2) = Field(default=Decimal(0), ge=Decimal(0))
+    created_by: PyUUID # User ID
+    notes: Optional[str] = None
+
+class PurchaseOrderCreate(PurchaseOrderBase):
+    pass
+
+class PurchaseOrderUpdate(BaseModel):
+    supplier_id: Optional[PyUUID] = None
+    order_date: Optional[date] = None
+    expected_delivery_date: Optional[date] = None
+    status: Optional[PurchaseOrderStatusEnum] = None
+    total_amount: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    payment_terms: Optional[str] = Field(None, max_length=50)
+    payment_status: Optional[PaymentStatusEnum] = None
+    shipping_cost: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    # created_by should generally not be updated
+    notes: Optional[str] = None
+
+class PurchaseOrderSchema(PurchaseOrderBase):
+    po_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# PurchaseOrderItem Schemas
+class PurchaseOrderItemBase(BaseModel):
+    po_id: PyUUID
+    inventory_item_id: PyUUID
+    quantity_ordered: condecimal(max_digits=10, decimal_places=2) = Field(gt=Decimal(0))
+    unit_price: condecimal(max_digits=10, decimal_places=2) = Field(ge=Decimal(0))
+    quantity_received: condecimal(max_digits=10, decimal_places=2) = Field(default=Decimal(0), ge=Decimal(0))
+    subtotal: condecimal(max_digits=10, decimal_places=2) # Will be calculated: quantity_ordered * unit_price
+    notes: Optional[str] = None
+
+    @field_validator('subtotal', always=True) # Pydantic v2: always=True to run even if not provided
+    def calculate_subtotal(cls, v, values):
+        data = values.data
+        if 'quantity_ordered' in data and 'unit_price' in data:
+            return data['quantity_ordered'] * data['unit_price']
+        return v # Or raise error if fields are missing
+
+class PurchaseOrderItemCreate(PurchaseOrderItemBase):
+    pass
+
+class PurchaseOrderItemUpdate(BaseModel):
+    # po_id typically not changed for an existing item
+    inventory_item_id: Optional[PyUUID] = None
+    quantity_ordered: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, gt=Decimal(0))
+    unit_price: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    quantity_received: Optional[condecimal(max_digits=10, decimal_places=2)] = Field(None, ge=Decimal(0))
+    subtotal: Optional[condecimal(max_digits=10, decimal_places=2)] = None # Recalculate on update
+    notes: Optional[str] = None
+
+    @field_validator('subtotal', always=True)
+    def calculate_subtotal_update(cls, v, values):
+        data = values.data
+        # Needs access to potentially unchanged quantity_ordered and unit_price from DB object if not in payload
+        # This is simpler if subtotal is always recalculated based on provided/existing values in the service layer.
+        # For Pydantic only, it assumes relevant fields are in `data`.
+        if data.get('quantity_ordered') is not None and data.get('unit_price') is not None:
+            return data['quantity_ordered'] * data['unit_price']
+        return v
+
+
+class PurchaseOrderItemSchema(PurchaseOrderItemBase):
+    po_item_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+# Schemas for Meal, MealIngredient, MealPreparation, etc. would follow the same pattern.
+# ... (Continuing with other schemas, keeping it brief for now)
+
+class MealBase(BaseModel):
+    name: str = Field(max_length=100)
+    description: Optional[str] = None
+    meal_type: str = Field(max_length=20)
+    calories: Optional[int] = Field(None, ge=0)
+    is_active: bool = True
+
+class MealCreate(MealBase):
+    pass
+
+class MealUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = None
+    meal_type: Optional[str] = Field(None, max_length=20)
+    calories: Optional[int] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+
+class MealSchema(MealBase):
+    meal_id: PyUUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+# ... And so on for all other tables:
+# MealIngredient, MealPreparation, MealPrepConsumption, Vehicle, Delivery, DeliveryItem,
+# InventoryTransaction, Donation, BoxType, Box, PackingSheet, PackedBox, PackedBoxItem,
+# LoadingSheet, LoadingSheetItem, MealLabel, BoxLabel.
+
+# --- Helper to create database tables ---
+def create_db_and_tables():
+    # Base.metadata.create_all(bind=engine) # Use Alembic for migrations in production
+    print("Database table creation/migration should be handled by Alembic.")
+    print(f"Using database URL: {SQLALCHEMY_DATABASE_URL}")
+    # The following can be useful for local dev if you drop/recreate the DB often
+    # try:
+    #     Base.metadata.drop_all(bind=engine) # Use with caution
+    #     Base.metadata.create_all(bind=engine)
+    #     print("Tables dropped and recreated.")
+    # except Exception as e:
+    #     print(f"Error during table setup: {e}")
+
+
+if __name__ == "__main__":
+    create_db_and_tables()
+    print("SQLAlchemy models and Pydantic schemas defined (more completely).")
+    print("Ensure all relationships and constraints are thoroughly reviewed against the SQL schema.")
+    print("Remember to install pyodbc: pip install pyodbc")
+    print("Consider using Enums more extensively for fields with fixed sets of values.")
+
+# --- Generic CRUD functions --- 
+
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
+from uuid import UUID
+
+from fastapi import HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql import func # For count
+
+# Define TypeVariables for SQLAlchemy model and Pydantic schemas
+ModelType = TypeVar("ModelType", bound=Base) # Base is your SQLAlchemy declarative_base()
+CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+
+class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+    def __init__(self, model: Type[ModelType]):
+        """
+        CRUD object with default methods to Create, Read, Update, Delete (CRUD).
+
+        **Parameters**
+
+        * `model`: A SQLAlchemy model class
+        """
+        self.model = model
+
+    def get(self, db: Session, id: Any) -> Optional[ModelType]:
+        """
+        Get a single record by ID.
+
+        **Parameters**
+
+        * `db`: SQLAlchemy session
+        * `id`: Primary key of the record
+        """
+        try:
+            return db.query(self.model).filter(self.model.id == id).first() # Assumes 'id' is the PK name
+        except SQLAlchemyError as e:
+            # Log error e
+            raise HTTPException(status_code=500, detail=f"Database error while fetching {self.model.__name__}")
+
+
+    def get_by_uuid(self, db: Session, item_uuid: UUID) -> Optional[ModelType]:
+        """
+        Get a single record by its UUID primary key.
+        Assumes the primary key column is named e.g., 'category_id', 'facility_id'.
+        It dynamically finds the primary key column name.
+        """
+        pk_name = self.model.__mapper__.primary_key[0].name
+        try:
+            return db.query(self.model).filter(getattr(self.model, pk_name) == item_uuid).first()
+        except SQLAlchemyError as e:
+            # Log error e
+            print(f"Database error: {e}") # Basic logging
+            raise HTTPException(status_code=500, detail=f"Database error while fetching {self.model.__name__} by UUID.")
+
+
+    def get_multi(
+        self, db: Session, *, skip: int = 0, limit: int = 100
+    ) -> List[ModelType]:
+        """
+        Get multiple records with pagination.
+
+        **Parameters**
+
+        * `db`: SQLAlchemy session
+        * `skip`: Number of records to skip
+        * `limit`: Maximum number of records to return
+        """
+        try:
+            return db.query(self.model).offset(skip).limit(limit).all()
+        except SQLAlchemyError as e:
+            # Log error e
+            raise HTTPException(status_code=500, detail=f"Database error while fetching multiple {self.model.__name__}")
+
+    def get_count(self, db: Session) -> int:
+        """
+        Get the total count of records for the model.
+
+        **Parameters**
+
+        * `db`: SQLAlchemy session
+        """
+        try:
+            return db.query(func.count(self.model.__mapper__.primary_key[0])).scalar()
+        except SQLAlchemyError as e:
+            # Log error e
+            raise HTTPException(status_code=500, detail=f"Database error while counting {self.model.__name__}")
+
+
+    def create(self, db: Session, *, obj_in: CreateSchemaType) -> ModelType:
+        """
+        Create a new record.
+
+        **Parameters**
+
+        * `db`: SQLAlchemy session
+        * `obj_in`: Pydantic schema with data for the new record
+        """
+        # Pydantic v2 uses model_dump()
+        obj_in_data = obj_in.model_dump()
+        db_obj = self.model(**obj_in_data)
+        try:
+            db.add(db_obj)
+            db.commit()
+            db.refresh(db_obj)
+            return db_obj
+        except SQLAlchemyError as e:
+            db.rollback()
+            # Log error e
+            # Check for unique constraint violations or other specific errors if possible
+            print(f"Database error on create: {e}") # Basic logging
+            raise HTTPException(status_code=400, detail=f"Error creating {self.model.__name__}. Possible duplicate or invalid data.")
+
+
+    def update(
+        self,
+        db: Session,
+        *,
+        db_obj: ModelType,
+        obj_in: Union[UpdateSchemaType, Dict[str, Any]]
+    ) -> ModelType:
+        """
+        Update an existing record.
+
+        **Parameters**
+
+        * `db`: SQLAlchemy session
+        * `db_obj`: SQLAlchemy model instance to update
+        * `obj_in`: Pydantic schema or dict with update data
+        """
+        if isinstance(obj_in, dict):
+            update_data = obj_in
+        else:
+            # Pydantic v2 uses model_dump()
+            update_data = obj_in.model_dump(exclude_unset=True) # exclude_unset for PATCH behavior
+
+        for field in update_data:
+            if hasattr(db_obj, field): # Check if the attribute exists on the model
+                setattr(db_obj, field, update_data[field])
+        try:
+            db.add(db_obj) # Not strictly necessary if db_obj is already in session, but good practice
+            db.commit()
+            db.refresh(db_obj)
+            return db_obj
+        except SQLAlchemyError as e:
+            db.rollback()
+            # Log error e
+            print(f"Database error on update: {e}") # Basic logging
+            raise HTTPException(status_code=400, detail=f"Error updating {self.model.__name__}.")
+
+
+    def remove(self, db: Session, *, item_uuid: UUID) -> Optional[ModelType]:
+        """
+        Remove a record by its UUID primary key.
+
+        **Parameters**
+
+        * `db`: SQLAlchemy session
+        * `item_uuid`: UUID of the record to remove
+        """
+        pk_name = self.model.__mapper__.primary_key[0].name
+        try:
+            obj = db.query(self.model).filter(getattr(self.model, pk_name) == item_uuid).first()
+            if obj:
+                db.delete(obj)
+                db.commit()
+                return obj
+            return None # Or raise HTTPException(status_code=404, detail="Item not found")
+        except SQLAlchemyError as e:
+            db.rollback()
+            # Log error e
+            print(f"Database error on delete: {e}") # Basic logging
+            # Consider specific FK constraint errors if a deletion is blocked
+            raise HTTPException(status_code=500, detail=f"Error deleting {self.model.__name__}.")
+
+# Example of how to use CRUDBase for a specific model (e.g., Category)
+# This would typically be in a crud/crud_category.py file
+
+# from .base import CRUDBase
+# from ..models.category import Category # Assuming models are in models/
+# from ..schemas.category import CategoryCreate, CategoryUpdate # Assuming schemas are in schemas/
+
+# class CRUDCategory(CRUDBase[Category, CategoryCreate, CategoryUpdate]):
+#     def get_by_name(self, db: Session, *, name: str) -> Optional[Category]:
+#         try:
+#             return db.query(Category).filter(Category.name == name).first()
+#         except SQLAlchemyError as e:
+#             # Log error e
+#             raise HTTPException(status_code=500, detail="Database error while fetching category by name.")
+
+#     # You can add more specific methods here, e.g.:
+#     # def get_active_categories(self, db: Session) -> List[Category]:
+#     #     return db.query(self.model).filter(self.model.is_active == True).all()
+
+# category_crud = CRUDCategory(Category)
+
+
+# Dependency for FastAPI to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+

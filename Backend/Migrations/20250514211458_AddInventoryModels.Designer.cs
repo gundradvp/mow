@@ -4,6 +4,7 @@ using MOWScheduler.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace MOWScheduler.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250514211458_AddInventoryModels")]
+    partial class AddInventoryModels
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -49,7 +52,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("CaseNotes", (string)null);
+                    b.ToTable("CaseNotes");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Client", b =>
@@ -117,7 +120,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("RouteId");
 
-                    b.ToTable("Clients", (string)null);
+                    b.ToTable("Clients");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.ClientDeliverySchedule", b =>
@@ -154,7 +157,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("ClientId");
 
-                    b.ToTable("ClientDeliverySchedules", (string)null);
+                    b.ToTable("ClientDeliverySchedules");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.ClientDeliveryScheduleDetail", b =>
@@ -183,7 +186,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("MealTypeId");
 
-                    b.ToTable("ClientDeliveryScheduleDetails", (string)null);
+                    b.ToTable("ClientDeliveryScheduleDetails");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.ClientDietaryRestriction", b =>
@@ -201,7 +204,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("DietaryRestrictionId");
 
-                    b.ToTable("ClientDietaryRestrictions", (string)null);
+                    b.ToTable("ClientDietaryRestrictions");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.ClientEligibilityCriteria", b =>
@@ -219,7 +222,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("EligibilityCriterionId");
 
-                    b.ToTable("ClientEligibilityCriteria", (string)null);
+                    b.ToTable("ClientEligibilityCriteria");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.DeliveryRoute", b =>
@@ -250,7 +253,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DeliveryRoutes", (string)null);
+                    b.ToTable("DeliveryRoutes");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.DietaryRestriction", b =>
@@ -270,7 +273,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DietaryRestrictions", (string)null);
+                    b.ToTable("DietaryRestrictions");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.EligibilityCriterion", b =>
@@ -290,7 +293,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("EligibilityCriteria", (string)null);
+                    b.ToTable("EligibilityCriteria");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Inventory.Category", b =>
@@ -323,7 +326,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("ParentCategoryId");
 
-                    b.ToTable("Categories", (string)null);
+                    b.ToTable("Categories");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Inventory.InventoryItem", b =>
@@ -391,7 +394,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.ToTable("InventoryItems", (string)null);
+                    b.ToTable("InventoryItems");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Inventory.InventoryTransaction", b =>
@@ -439,7 +442,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("ItemId");
 
-                    b.ToTable("InventoryTransactions", (string)null);
+                    b.ToTable("InventoryTransactions");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Inventory.Meal", b =>
@@ -475,7 +478,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Meals", (string)null);
+                    b.ToTable("Meals");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Inventory.MealIngredient", b =>
@@ -514,7 +517,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("MealId");
 
-                    b.ToTable("MealIngredients", (string)null);
+                    b.ToTable("MealIngredients");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.MealType", b =>
@@ -534,7 +537,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("MealTypes", (string)null);
+                    b.ToTable("MealTypes");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Notification", b =>
@@ -581,7 +584,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Notifications", (string)null);
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Schedule", b =>
@@ -627,7 +630,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("VolunteerId");
 
-                    b.ToTable("Schedules", (string)null);
+                    b.ToTable("Schedules");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.ServiceAuthorization", b =>
@@ -664,7 +667,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("ClientId");
 
-                    b.ToTable("ServiceAuthorizations", (string)null);
+                    b.ToTable("ServiceAuthorizations");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Shift", b =>
@@ -687,7 +690,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Shifts", (string)null);
+                    b.ToTable("Shifts");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.User", b =>
@@ -744,7 +747,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("MOWScheduler.Models.Volunteer", b =>
@@ -856,7 +859,7 @@ namespace MOWScheduler.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Volunteers", (string)null);
+                    b.ToTable("Volunteers");
                 });
 
             modelBuilder.Entity("ShiftVolunteer", b =>

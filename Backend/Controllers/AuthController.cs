@@ -99,9 +99,7 @@ namespace MOWScheduler.Controllers
                     try
                     {
                         // Generate password hash with salt
-                        string passwordHash = BCrypt.Net.BCrypt.HashPassword(registrationDto.Password);
-
-                        // Create user entity
+                        string passwordHash = BCrypt.Net.BCrypt.HashPassword(registrationDto.Password);                        // Create user entity
                         var user = new User
                         {
                             Username = registrationDto.Username,
@@ -112,7 +110,9 @@ namespace MOWScheduler.Controllers
                             PhoneNumber = registrationDto.PhoneNumber,
                             Role = "Volunteer", // Specific role for volunteers
                             CreatedAt = DateTime.Now,
-                            IsActive = true
+                            IsActive = true,
+                            IsStaff = false, // Volunteers are not staff members
+                            OperationalRoles = registrationDto.OperationalRoles
                         };
 
                         // Add and save user to get the ID
@@ -228,14 +228,15 @@ namespace MOWScheduler.Controllers
         /// <param name="user">The authenticated user.</param>
         /// <returns>A JWT token string.</returns>
         private string GenerateJwtToken(User user)
-        {
-            var claims = new[]
+        {            var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Username),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim(ClaimTypes.Role, user.Role),
-                new Claim("id", user.Id.ToString())
+                new Claim("id", user.Id.ToString()),
+                new Claim("isStaff", user.IsStaff.ToString().ToLower()),
+                new Claim("operationalRoles", user.OperationalRoles ?? string.Empty)
             };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"] ?? ""));

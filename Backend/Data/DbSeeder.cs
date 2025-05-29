@@ -1,4 +1,5 @@
 using MOWScheduler.Models;
+using MOWScheduler.Models.Inventory;
 using System;
 using System.Linq;
 using System.Collections.Generic;
@@ -13,9 +14,7 @@ namespace MOWScheduler.Data
             try
             {
                 // Make sure the database is created
-                context.Database.EnsureCreated();
-
-                // Ensure admin user exists (even if other users exist)
+                context.Database.EnsureCreated();                // Ensure admin user exists (even if other users exist)
                 if (!context.Users.Any(u => u.Username == "admin" && u.Role == "Admin"))
                 {
                     var adminUser = new User
@@ -27,6 +26,8 @@ namespace MOWScheduler.Data
                         LastName = "User",
                         PhoneNumber = "555-123-4567",
                         Role = "Admin",
+                        IsStaff = true,
+                        OperationalRoles = "InventoryManager,RoutePlanner,ClientCoordinator,VolunteerCoordinator",
                         CreatedAt = DateTime.Now
                     };
                     context.Users.Add(adminUser);
@@ -38,23 +39,51 @@ namespace MOWScheduler.Data
                 if (context.Users.Count() > 1)
                 {
                     return; // Rest of database has been seeded already
-                }
-
-                // Add volunteer user
-                var volunteerUser = new User
+                }                // Add volunteer users with different operational roles
+                var kitchenVolunteer = new User
                 {
-                    Username = "volunteer",
-                    Email = "volunteer@example.com",
+                    Username = "kitchen",
+                    Email = "kitchen@example.com",
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("Volunteer123!"),
-                    FirstName = "Test",
+                    FirstName = "Kitchen",
                     LastName = "Volunteer",
                     PhoneNumber = "555-234-5678",
                     Role = "Volunteer",
+                    IsStaff = false,
+                    OperationalRoles = "KitchenVolunteer",
+                    CreatedAt = DateTime.Now
+                };
+                
+                var driverVolunteer = new User
+                {
+                    Username = "driver",
+                    Email = "driver@example.com",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Volunteer123!"),
+                    FirstName = "Driver",
+                    LastName = "Volunteer",
+                    PhoneNumber = "555-876-5432",
+                    Role = "Volunteer",
+                    IsStaff = false,
+                    OperationalRoles = "Driver",
+                    CreatedAt = DateTime.Now
+                };
+                
+                var inventoryVolunteer = new User
+                {
+                    Username = "inventory",
+                    Email = "inventory@example.com",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Volunteer123!"),
+                    FirstName = "Inventory",
+                    LastName = "Manager",
+                    PhoneNumber = "555-987-6543",
+                    Role = "Volunteer",
+                    IsStaff = false,
+                    OperationalRoles = "InventoryManager,KitchenVolunteer",
                     CreatedAt = DateTime.Now
                 };
 
-                // Save volunteer user to the database
-                context.Users.Add(volunteerUser);
+                // Save volunteer users to the database
+                context.Users.AddRange(kitchenVolunteer, driverVolunteer, inventoryVolunteer);
                 context.SaveChanges();
 
                 // Add Dietary Restrictions
@@ -186,40 +215,204 @@ namespace MOWScheduler.Data
                 // Assign clients to routes (Example)
                 client1.RouteId = route1.Id;
                 client2.RouteId = route1.Id;
-                context.SaveChanges();
-
-                // Add volunteer record
-                var volunteer = new Volunteer
+                context.SaveChanges();                // Add volunteer records
+                var kitchenVolunteerRecord = new Volunteer
                 {
-                    UserId = volunteerUser.Id,
+                    UserId = kitchenVolunteer.Id,
                     AvailableDays = "Monday,Wednesday,Friday",
                     IsActive = true,
                     StartDate = DateTime.Now.AddDays(-30),
-                    Notes = "Has own vehicle"
+                    Notes = "Kitchen helper"
                 };
-
-                // Save volunteer to database
-                context.Volunteers.Add(volunteer);
-                context.SaveChanges();
-
-                // Now that we have the volunteer ID, create a schedule
+                
+                var driverVolunteerRecord = new Volunteer
+                {
+                    UserId = driverVolunteer.Id,
+                    AvailableDays = "Tuesday,Thursday",
+                    IsActive = true,
+                    StartDate = DateTime.Now.AddDays(-15),
+                    Notes = "Has own vehicle"
+                };                // Save volunteers to database
+                context.Volunteers.AddRange(kitchenVolunteerRecord, driverVolunteerRecord);
+                context.SaveChanges();                // Now that we have the volunteer IDs, create schedules
                 var schedule = new Schedule
                 {
-                    VolunteerId = volunteer.Id,
+                    VolunteerId = driverVolunteerRecord.Id,
                     RouteId = route1.Id,
                     ScheduledDate = DateTime.Now.Date.AddDays(1),
                     Status = "Scheduled",
                     Notes = "First delivery"
                 };
-
-                // Save schedule to database
-                context.Schedules.Add(schedule);
+                
+                var schedule2 = new Schedule
+                {
+                    VolunteerId = kitchenVolunteerRecord.Id,
+                    RouteId = route2.Id,
+                    ScheduledDate = DateTime.Now.Date.AddDays(2),
+                    Status = "Scheduled",
+                    Notes = "Kitchen duty"
+                };
+                
+                // Add inventory categories
+                var dairyCategory = new Category
+                {
+                    Name = "Dairy",
+                    Description = "Milk, cheese, and other dairy products",
+                    IsActive = true
+                };
+                
+                var produceCategory = new Category
+                {
+                    Name = "Produce",
+                    Description = "Fresh fruits and vegetables",
+                    IsActive = true
+                };
+                
+                var meatCategory = new Category
+                {
+                    Name = "Meat",
+                    Description = "Fresh meat products",
+                    IsActive = true
+                };
+                
+                var dryGoodsCategory = new Category
+                {
+                    Name = "Dry Goods",
+                    Description = "Non-perishable food items",
+                    IsActive = true
+                };
+                
+                context.Categories.AddRange(dairyCategory, produceCategory, meatCategory, dryGoodsCategory);
+                context.SaveChanges();
+                  // Add inventory items
+                var inventoryItems = new List<InventoryItem>
+                {
+                    new InventoryItem
+                    {
+                        Name = "Whole Milk",
+                        Description = "Gallon of whole milk",
+                        SKU = "DAIRY-001",
+                        CategoryId = dairyCategory.Id,
+                        UnitOfMeasure = "Gallon",
+                        CurrentQuantity = 20,
+                        ReorderThreshold = 10,
+                        ReorderQuantity = 15,
+                        UnitCost = 3.99M,
+                        IsPerishable = true,
+                        ShelfLifeDays = 14,
+                        IsActive = true
+                    },
+                    new InventoryItem
+                    {
+                        Name = "Carrots",
+                        Description = "5lb bag of carrots",
+                        SKU = "PROD-001",
+                        CategoryId = produceCategory.Id,
+                        UnitOfMeasure = "Bag",
+                        CurrentQuantity = 15,
+                        ReorderThreshold = 5,
+                        ReorderQuantity = 10,
+                        UnitCost = 2.99M,
+                        IsPerishable = true,
+                        ShelfLifeDays = 21,
+                        IsActive = true
+                    },
+                    new InventoryItem
+                    {
+                        Name = "Ground Beef",
+                        Description = "1lb package of ground beef",
+                        SKU = "MEAT-001",
+                        CategoryId = meatCategory.Id,
+                        UnitOfMeasure = "Pound",
+                        CurrentQuantity = 30,
+                        ReorderThreshold = 15,
+                        ReorderQuantity = 20,
+                        UnitCost = 4.99M,
+                        IsPerishable = true,
+                        ShelfLifeDays = 7,
+                        IsActive = true
+                    },
+                    new InventoryItem
+                    {
+                        Name = "Rice",
+                        Description = "10lb bag of white rice",
+                        SKU = "DRY-001",
+                        CategoryId = dryGoodsCategory.Id,
+                        UnitOfMeasure = "Bag",
+                        CurrentQuantity = 25,
+                        ReorderThreshold = 10,
+                        ReorderQuantity = 15,
+                        UnitCost = 8.99M,
+                        IsPerishable = false,
+                        IsActive = true
+                    }
+                };
+                  context.InventoryItems.AddRange(inventoryItems);
+                context.SaveChanges();
+                  // Add example inventory transactions
+                var transactions = new List<InventoryTransaction>
+                {
+                    new InventoryTransaction
+                    {
+                        ItemId = inventoryItems[0].Id, // Milk
+                        TransactionType = "Receipt",
+                        Quantity = 20,
+                        TransactionDate = DateTime.Now.AddDays(-5),
+                        UserId = Guid.NewGuid(), // Use a new Guid since User.Id is int and not compatible
+                        Notes = "Initial inventory receipt",
+                        CreatedAt = DateTime.Now.AddDays(-5)
+                    },
+                    new InventoryTransaction
+                    {
+                        ItemId = inventoryItems[0].Id, // Milk
+                        TransactionType = "Consumption",
+                        Quantity = -5,
+                        TransactionDate = DateTime.Now.AddDays(-2),
+                        UserId = Guid.NewGuid(), // Use a new Guid since User.Id is int and not compatible
+                        Notes = "Used for meal preparation by kitchen volunteer",
+                        CreatedAt = DateTime.Now.AddDays(-2)
+                    },
+                    new InventoryTransaction
+                    {
+                        ItemId = inventoryItems[1].Id, // Carrots
+                        TransactionType = "Receipt",
+                        Quantity = 15,
+                        TransactionDate = DateTime.Now.AddDays(-7),
+                        UserId = Guid.NewGuid(), // Use a new Guid since User.Id is int and not compatible
+                        Notes = "Weekly delivery by inventory volunteer",
+                        CreatedAt = DateTime.Now.AddDays(-7)
+                    },
+                    new InventoryTransaction
+                    {
+                        ItemId = inventoryItems[2].Id, // Ground Beef
+                        TransactionType = "Receipt",
+                        Quantity = 30,
+                        TransactionDate = DateTime.Now.AddDays(-3),
+                        UserId = Guid.NewGuid(), // Use a new Guid since User.Id is int and not compatible
+                        Notes = "Delivery from supplier by inventory volunteer",
+                        CreatedAt = DateTime.Now.AddDays(-3)
+                    },
+                    new InventoryTransaction
+                    {
+                        ItemId = inventoryItems[3].Id, // Rice
+                        TransactionType = "Receipt",
+                        Quantity = 25,
+                        TransactionDate = DateTime.Now.AddDays(-10),
+                        UserId = Guid.NewGuid(), // Use a new Guid since User.Id is int and not compatible
+                        Notes = "Monthly bulk order by inventory volunteer",
+                        CreatedAt = DateTime.Now.AddDays(-10)
+                    }
+                };
+                
+                context.InventoryTransactions.AddRange(transactions);
+                context.SaveChanges();// Save schedules to database
+                context.Schedules.AddRange(schedule, schedule2);
                 context.SaveChanges();
 
                 // Add some notifications
-                var notification = new Notification
+                var notification1 = new Notification
                 {
-                    UserId = volunteerUser.Id,
+                    UserId = driverVolunteer.Id,
                     Title = "Schedule Assignment",
                     Message = "You have been assigned to the Downtown Route tomorrow.",
                     Type = "InApp",
@@ -229,8 +422,19 @@ namespace MOWScheduler.Data
                     ReferenceId = schedule.Id,
                     ReferenceType = "Schedule"
                 };
-
-                context.Notifications.Add(notification);
+                
+                var notification2 = new Notification
+                {
+                    UserId = kitchenVolunteer.Id,
+                    Title = "Schedule Assignment",
+                    Message = "You have been assigned to Kitchen duty in two days.",
+                    Type = "InApp",
+                    Status = "Sent",
+                    CreatedAt = DateTime.Now,
+                    SentAt = DateTime.Now,
+                    ReferenceId = schedule2.Id,
+                    ReferenceType = "Schedule"
+                };                context.Notifications.AddRange(notification1, notification2);
                 context.SaveChanges();
             }
             catch (Exception ex)
