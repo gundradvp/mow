@@ -33,8 +33,29 @@ const DriverLogin = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  // Check if there's a redirect path in the location state
   const from = location.state?.from?.pathname || "/app/volunteer-dashboard"; // Updated path for driver dashboard
+  const handleDemoLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      // Set form fields with demo credentials
+      setUsername("driver1");
+      setPassword("Password123!");
+
+      // Attempt login
+      const userData = await login("driver1", "Password123!");
+
+      if (userData.role === "Driver" || userData.role === "Volunteer") {
+        navigate("/app/volunteer-dashboard");
+      }
+    } catch (err) {
+      setError("Failed to log in with demo account. Please try again.");
+      console.error("Demo login error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -65,14 +86,8 @@ const DriverLogin = () => {
       setLoading(false);
     }
   };
-
   const handleTogglePassword = () => {
     setShowPassword(!showPassword);
-  }; // Demo driver login for testing purposes
-  const handleDemoLogin = () => {
-    setUsername("driver1");
-    setPassword("Password123!");
-    // This will use the Driver role we set up in AuthContext
   };
 
   return (
@@ -118,6 +133,23 @@ const DriverLogin = () => {
               {error}
             </Alert>
           )}
+
+          <Button
+            fullWidth
+            variant="outlined"
+            color="primary"
+            onClick={handleDemoLogin}
+            disabled={loading}
+            sx={{ mb: 2 }}
+          >
+            Use Demo Driver Account
+          </Button>
+
+          <Divider sx={{ width: "100%", mb: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              or sign in with credentials
+            </Typography>
+          </Divider>
 
           <form onSubmit={handleSubmit}>
             <TextField

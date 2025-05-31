@@ -672,7 +672,8 @@ const RouteMap = () => {
             </Button>
           </Box>
         </Container>
-      )}{" "}      {/* Loading Sheet Dialog removed since we're using direct navigation */}
+      )}{" "}
+      {/* Loading Sheet Dialog removed since we're using direct navigation */}
       {/* Fixed bottom navigation for mobile */}
       {isMobile && (
         <Paper
