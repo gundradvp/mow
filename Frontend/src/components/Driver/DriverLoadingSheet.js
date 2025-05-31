@@ -11,6 +11,7 @@ import {
   Divider,
   Button,
   CircularProgress,
+  LinearProgress,
   Alert,
   Chip,
   Dialog,
@@ -43,6 +44,7 @@ const DriverLoadingSheet = ({
   const [scannedCode, setScannedCode] = useState("");
   const [scanSuccess, setScanSuccess] = useState(false);
   const [scanError, setScanError] = useState("");
+  const [successDetails, setSuccessDetails] = useState(null);
   const scanInputRef = useRef(null);
   useEffect(() => {
     if (open && deliveries && deliveries.length > 0) {
@@ -118,21 +120,52 @@ const DriverLoadingSheet = ({
     );
 
     if (matchedItem) {
+      if (matchedItem.checked) {
+        setScanError("This item has already been scanned and loaded");
+        setScanSuccess(false);
+        return;
+      }
+
       // Mark this item as checked
       handleToggleItem(matchedItem.id);
       setScanSuccess(true);
       setScanError("");
+      setSuccessDetails({
+        stopNumber: matchedItem.sequenceNumber,
+        recipient: matchedItem.recipientName,
+        itemCount: matchedItem.parcelCount,
+      });
 
-      // Reset form after a short delay to show success
+      // Calculate current progress
+      const totalItems = loadingItems.length;
+      const checkedItems =
+        loadingItems.filter((item) => item.checked).length + 1; // +1 for current scan
+      const loadingPercentage = Math.floor((checkedItems / totalItems) * 100);
+
+      // Update parent component with progress but don't close the dialog
+      if (onLoadStatusChange) {
+        const status =
+          loadingPercentage === 100 ? "Fully Loaded" : "Partially Loaded";
+        onLoadStatusChange(status, loadingPercentage);
+      }
+
+      // Clear the scan input and show success message
       setTimeout(() => {
         setScannedCode("");
-        setScanSuccess(false);
         if (scanInputRef.current) {
           scanInputRef.current.focus();
         }
-      }, 1000);
+      }, 100);
+
+      // Keep success message visible longer
+      setTimeout(() => {
+        setScanSuccess(false);
+        setSuccessDetails(null);
+      }, 2500);
     } else {
-      setScanError(`No item found with ID ${scannedCode}`);
+      setScanError(
+        `No delivery found with ID ${scannedCode}. Please check and try again.`
+      );
       setScanSuccess(false);
     }
   };
@@ -144,6 +177,13 @@ const DriverLoadingSheet = ({
   };
 
   const handleCompleteLoading = () => {
+    // Check if all scanned items are valid
+    const unscannedItems = loadingItems.filter((item) => !item.checked);
+    if (unscannedItems.length > 0) {
+      setError("Please scan all items before completing the loading process");
+      return;
+    }
+
     // Calculate the loading status
     const totalItems = loadingItems.length;
     const checkedItems = loadingItems.filter((item) => item.checked).length;
@@ -156,9 +196,17 @@ const DriverLoadingSheet = ({
       status = "Partially Loaded";
     }
 
-    // Call the parent component with the updated status
-    onLoadStatusChange(status, loadingPercentage);
-    onClose();
+    // Update parent component status before closing
+    if (onLoadStatusChange) {
+      onLoadStatusChange(status, loadingPercentage);
+    }
+
+    // Add a small delay before closing to ensure state updates are processed
+    setTimeout(() => {
+      if (unscannedItems.length === 0) {
+        onClose();
+      }
+    }, 100);
   };
 
   if (loading) {
@@ -225,9 +273,25 @@ const DriverLoadingSheet = ({
 
           {scanMode && (
             <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Scan QR Code or Enter Order ID
-              </Typography>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography variant="subtitle2" gutterBottom>
+                  Scan QR Code or Enter Order ID
+                </Typography>
+                <Chip
+                  label={`${
+                    loadingItems.filter((item) => item.checked).length
+                  }/${loadingItems.length} Scanned`}
+                  color={allItemsChecked ? "success" : "primary"}
+                  size="small"
+                />
+              </Box>
 
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
                 <TextField
@@ -256,15 +320,31 @@ const DriverLoadingSheet = ({
                 />
               </Box>
 
-              {scanError && (
-                <Alert severity="error" sx={{ mb: 1 }}>
-                  {scanError}
+              {scanSuccess && successDetails && (
+                <Alert severity="success" sx={{ mb: 1 }}>
+                  <Typography variant="body2">
+                    ✓ Successfully loaded Stop #{successDetails.stopNumber}
+                    <br />
+                    Recipient: {successDetails.recipient}
+                    <br />
+                    Items: {successDetails.itemCount}
+                    <br />
+                    <LinearProgress
+                      variant="determinate"
+                      value={
+                        (loadingItems.filter((item) => item.checked).length /
+                          loadingItems.length) *
+                        100
+                      }
+                      sx={{ mt: 1, height: 8, borderRadius: 2 }}
+                    />
+                  </Typography>
                 </Alert>
               )}
 
-              {scanSuccess && (
-                <Alert severity="success" sx={{ mb: 1 }}>
-                  Item successfully marked as loaded!
+              {scanError && (
+                <Alert severity="error" sx={{ mb: 1 }}>
+                  {scanError}
                 </Alert>
               )}
 

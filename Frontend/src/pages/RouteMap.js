@@ -462,8 +462,7 @@ const RouteMap = () => {
   };
 
   const handleStartNavigation = () => {
-    // Navigate to the delivery navigation page for the selected delivery
-    navigate(`/app/delivery-navigation/${currentOrder.id}`);
+    navigate(`/app/delivery-navigation/${deliveryId}`);
   };
 
   const handleOpenLoadingSheet = () => {
@@ -480,11 +479,8 @@ const RouteMap = () => {
   };
   // Check if this is a specific route that should bypass the loading process
   const shouldSkipLoadingProcess = () => {
-    return (
-      deliveryId === "ST7890QR14" ||
-      deliveryId.includes("ST7890QR14") ||
-      deliveryId === "all"
-    );
+    // We're skipping the loading process entirely
+    return true;
   };
 
   const handleSelectStop = (stopNumber) => {
@@ -653,66 +649,30 @@ const RouteMap = () => {
           </Card>{" "}
           {/* Action buttons */}
           <Box sx={{ display: "flex", gap: 2, mt: 3, mb: isMobile ? 12 : 2 }}>
-            {!shouldSkipLoadingProcess() &&
-              routeLoadingStatus !== "Fully Loaded" && (
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  onClick={handleOpenLoadingSheet}
-                  sx={{
-                    py: 1.2,
-                    borderRadius: 1,
-                    fontSize: "1rem",
-                    flex: 1,
-                  }}
-                >
-                  {routeLoadingStatus === "Not Started"
-                    ? "Load Items"
-                    : "Complete Loading"}
-                </Button>
-              )}
-
             <Button
               variant="contained"
               color="primary"
               fullWidth
               size="large"
               onClick={handleStartNavigation}
-              disabled={
-                !shouldSkipLoadingProcess() &&
-                routeLoadingStatus !== "Fully Loaded"
-              }
               sx={{
                 py: 1.2,
                 borderRadius: 1,
                 fontSize: "1rem",
                 textTransform: "none",
-                flex:
-                  shouldSkipLoadingProcess() ||
-                  routeLoadingStatus === "Fully Loaded"
-                    ? 1
-                    : 2,
+                flex: 1,
+                bgcolor: "primary.main", // Ensure primary color
+                color: "white", // White text
+                "&:hover": {
+                  bgcolor: "primary.dark", // Darker shade on hover
+                },
               }}
             >
-              {shouldSkipLoadingProcess()
-                ? "Start Delivery"
-                : routeLoadingStatus === "Fully Loaded"
-                ? "Start Delivery"
-                : "Delivery Ready"}
+              Start Navigation
             </Button>
           </Box>
         </Container>
-      )}{" "}
-      {/* Loading Sheet Dialog - Only shown for routes that require loading */}{" "}
-      {!shouldSkipLoadingProcess() && (
-        <DriverLoadingSheet
-          open={loadingSheetOpen}
-          onClose={handleCloseLoadingSheet}
-          routeNumber="R-452"
-          deliveries={deliveries}
-          onLoadStatusChange={handleLoadStatusChange}
-        />
-      )}
+      )}{" "}      {/* Loading Sheet Dialog removed since we're using direct navigation */}
       {/* Fixed bottom navigation for mobile */}
       {isMobile && (
         <Paper
