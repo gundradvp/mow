@@ -200,7 +200,7 @@ const DeliveryDetails = () => {
   };
 
   const handleStartDelivery = () => {
-    navigate(`/route-map/${deliveryId}`);
+    navigate(`/app/route-map/${deliveryId}`);
   };
 
   const formatDate = (dateString) => {
@@ -402,6 +402,7 @@ const DeliveryDetails = () => {
         )}{" "}
         {/* Action Buttons */}
         <Box sx={{ display: "flex", gap: 2, mb: isMobile ? 12 : 2 }}>
+          {" "}
           <Button
             variant="contained"
             color="primary"
@@ -412,19 +413,6 @@ const DeliveryDetails = () => {
             disabled={delivery.status === "Completed"}
           >
             {delivery.status === "Completed" ? "Delivered" : "Start Delivery"}
-          </Button>
-          <Button
-            variant="outlined"
-            color="success"
-            fullWidth
-            size="large"
-            startIcon={<CheckCircleIcon />}
-            onClick={() => navigate(`/delivery-confirmation/${delivery.id}`)}
-            disabled={delivery.status === "Completed"}
-          >
-            {delivery.status === "Completed"
-              ? "Already Delivered"
-              : "Mark Delivered"}
           </Button>
         </Box>
       </Container>
@@ -452,22 +440,22 @@ const DeliveryDetails = () => {
             <BottomNavigationAction
               label="Home"
               icon={<HomeIcon />}
-              onClick={() => navigate("/volunteer-dashboard")}
+              onClick={() => navigate("/app/volunteer-dashboard")}
             />
             <BottomNavigationAction
               label="Schedule"
               icon={<ScheduleIcon />}
-              onClick={() => navigate("/volunteer-schedule")}
+              onClick={() => navigate("/app/volunteer-schedule")}
             />
             <BottomNavigationAction
               label="Routes"
               icon={<MapIcon />}
-              onClick={() => navigate("/volunteer-routes")}
+              onClick={() => navigate("/app/volunteer-routes")}
             />
             <BottomNavigationAction
               label="Profile"
               icon={<AccountCircleIcon />}
-              onClick={() => navigate("/volunteer-profile")}
+              onClick={() => navigate("/app/volunteer-profile")}
             />
           </BottomNavigation>
         </Paper>

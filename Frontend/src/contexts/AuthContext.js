@@ -1,6 +1,60 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
 import axios from "axios";
-import jwt_decode from "jwt-decode";
+
+// Demo users for static login
+const DEMO_USERS = {
+  driver1: {
+    id: "d001",
+    username: "driver1",
+    role: "Driver", // Changed from Volunteer to Driver
+    password: "Password123!",
+    name: "John Driver",
+    firstName: "John",
+    lastName: "Driver",
+    email: "driver1@mow.org",
+  },
+  volunteer1: {
+    id: "v001",
+    username: "volunteer1",
+    role: "Volunteer",
+    password: "Password123!",
+    name: "Jane Volunteer",
+    firstName: "Jane",
+    lastName: "Volunteer",
+    email: "volunteer1@mow.org",
+  },
+  admin: {
+    id: "a001",
+    username: "admin",
+    role: "Admin",
+    password: "Admin123!",
+    name: "Admin User",
+  },
+  coordinator: {
+    id: "c001",
+    username: "coordinator",
+    role: "Coordinator",
+    password: "Coord123!",
+    name: "Coordinator User",
+  },
+};
+
+// Configure axios to avoid making actual API calls
+axios.interceptors.request.use(
+  (config) => {
+    // If we see a request to the backend API, log it but don't actually send it
+    if (config.url.includes("/api/")) {
+      console.log("Mock API request:", config.method, config.url, config.data);
+      return new Promise((resolve) => {
+        // This effectively cancels the request but doesn't cause errors
+      });
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 export const AuthContext = createContext();
 
@@ -14,78 +68,64 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
+    // Check for stored user in local storage
+    const storedUser = localStorage.getItem("mockUser");
+    if (storedUser) {
       try {
-        const decodedToken = jwt_decode(token);
-        // Check if token is expired
-        const currentTime = Date.now() / 1000;
-        if (decodedToken.exp < currentTime) {
-          // Token is expired
-          logout();
-        } else {
-          // Set user data from token
-          const userData = {
-            id: decodedToken.id,
-            username: decodedToken.sub,
-            role: decodedToken.role,
-          };
-          setCurrentUser(userData);
-
-          // Set authorization header for all future requests
-          axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-        }
+        const userData = JSON.parse(storedUser);
+        setCurrentUser(userData);
       } catch (error) {
-        console.error("Invalid token", error);
+        console.error("Invalid stored user", error);
         logout();
       }
     }
     setIsLoading(false);
   }, []);
-
   const login = async (username, password) => {
-    try {
-      const response = await axios.post("/api/auth/login", {
-        username,
-        password,
-      });
-      const { token, userId, username: user, role } = response.data;
+    // Simulate a delay for the login process
+    await new Promise((resolve) => setTimeout(resolve, 600));
 
-      localStorage.setItem("token", token);
+    // Check if username exists in our demo users
+    if (DEMO_USERS[username]) {
+      // Check if password matches
+      if (DEMO_USERS[username].password === password) {
+        // Create user data object
+        const userData = {
+          id: DEMO_USERS[username].id,
+          username: DEMO_USERS[username].username,
+          role: DEMO_USERS[username].role,
+          name: DEMO_USERS[username].name,
+        };
 
-      // Set authorization header for all future requests
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+        // Store user data in local storage
+        localStorage.setItem("mockUser", JSON.stringify(userData));
 
-      const userData = {
-        id: userId,
-        username: user,
-        role: role,
-      };
-
-      setCurrentUser(userData);
-      return userData;
-    } catch (error) {
-      console.error("Login error", error.response?.data || error.message);
-      throw error;
+        // Set current user
+        setCurrentUser(userData);
+        return userData;
+      }
     }
+
+    // If login fails
+    throw new Error("Invalid username or password");
   };
 
   const register = async (userData) => {
-    try {
-      const response = await axios.post("/api/auth/register", userData);
-      return response.data;
-    } catch (error) {
-      console.error(
-        "Registration error",
-        error.response?.data || error.message
-      );
-      throw error;
-    }
+    // Simulate a delay for the registration process
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // For demo purposes, just log the registration attempt
+    console.log("Registration attempted with data:", userData);
+
+    // Return a mock success response
+    return {
+      success: true,
+      message: "Registration successful. Please login.",
+    };
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
-    delete axios.defaults.headers.common["Authorization"];
+    localStorage.removeItem("mockUser");
     setCurrentUser(null);
   };
 

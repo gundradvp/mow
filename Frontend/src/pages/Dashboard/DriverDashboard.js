@@ -41,6 +41,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import axios from "axios";
 import DriverLoadingSheet from "../../components/Driver/DriverLoadingSheet";
+import { mockDeliveries, mockNotifications } from "../../mocks/mockData";
 
 const DriverDashboard = () => {
   const { currentUser } = useAuth();
@@ -64,15 +65,14 @@ const DriverDashboard = () => {
       try {
         setLoading(true);
 
-        // In a real application, you'd fetch this from your API based on currentUser.id
-        // For now, we'll use mock data
+        // Use our mock data from the mockData file
         setTimeout(() => {
           // Mock volunteer data
           const mockVolunteer = {
-            id: currentUser?.id || "v-123",
+            id: currentUser?.id || "d001",
             firstName: currentUser?.firstName || "John",
-            lastName: currentUser?.lastName || "Doe",
-            email: currentUser?.email || "volunteer@example.com",
+            lastName: currentUser?.lastName || "Driver",
+            email: currentUser?.email || "driver@example.com",
             phoneNumber: "555-123-4567",
             address: "123 Main Street",
             city: "Springfield",
@@ -83,31 +83,18 @@ const DriverDashboard = () => {
             assignedDeliveries: 10,
             joinedSince: "January 15, 2023",
             profileImage: `https://i.pravatar.cc/300?u=${
-              currentUser?.id || "v-123"
+              currentUser?.id || "d001"
             }`,
             routeNumber: "R-452",
             routeLoadingStatus: "Not Started",
           };
 
-          // Enhanced mock upcoming deliveries with more details for mobile view
+          // Enhanced mock upcoming deliveries from our mockData file
           const mockUpcoming = [
-            {
-              id: "ST7890QR12",
-              sequenceNumber: 1,
-              date: "2025-05-10",
-              time: "9:00 AM - 11:00 AM",
-              route: "North Springfield",
-              routeNumber: "R-452",
-              recipientName: "Aman Sharma",
-              address: "201/D, Ananta Apts, Near Jal Bhawan, Andheri 400069",
-              distance: "5 km",
-              clients: 1,
-              status: "Yet to Start",
-              items: [
-                { name: "Caramel Macchiato", quantity: 1 },
-                { name: "Egg Mayo Breakfast Sandwich", quantity: 2 },
-              ],
-            },
+            ...mockDeliveries.map((delivery) => ({
+              ...delivery,
+              clients: 1, // Add clients property if needed by the component
+            })),
             {
               id: "ST7890QR13",
               sequenceNumber: 2,
@@ -244,7 +231,7 @@ const DriverDashboard = () => {
 
   const handleViewDetails = (deliveryId) => {
     // Navigate to delivery details page
-    navigate(`/volunteer-delivery/${deliveryId}`);
+    navigate(`/app/volunteer-delivery/${deliveryId}`);
   };
 
   // Helper function to check if any non-completed deliveries exist
@@ -255,15 +242,15 @@ const DriverDashboard = () => {
   };
   const handleGenerateRouteMap = () => {
     // Navigate to route map with all active deliveries
-    navigate(`/route-map/all`);
+    navigate(`/app/route-map/all`);
   };
 
   const handleViewAllSchedules = () => {
-    navigate("/volunteer-schedules");
+    navigate("/app/volunteer-schedules");
   };
 
   const handleViewAllNotifications = () => {
-    navigate("/volunteer-notifications");
+    navigate("/app/volunteer-notifications");
   };
 
   const handleOpenLoadingSheet = (routeNumber) => {
@@ -329,7 +316,9 @@ const DriverDashboard = () => {
           <IconButton
             color="inherit"
             edge="end"
-            onClick={() => navigate(`/volunteer-profile/${volunteerData.id}`)}
+            onClick={() =>
+              navigate(`/app/volunteer-profile/${volunteerData.id}`)
+            }
             size={isMobile ? "medium" : "large"}
           >
             <Avatar
@@ -636,7 +625,7 @@ const DriverDashboard = () => {
             <BottomNavigationAction
               label="Home"
               icon={<HomeIcon />}
-              onClick={() => navigate("/volunteer-dashboard")}
+              onClick={() => navigate("/app/volunteer-dashboard")}
             />
             <BottomNavigationAction
               label="Schedule"
@@ -646,12 +635,14 @@ const DriverDashboard = () => {
             <BottomNavigationAction
               label="Routes"
               icon={<MapIcon />}
-              onClick={() => navigate("/volunteer-routes")}
+              onClick={() => navigate("/app/volunteer-routes")}
             />
             <BottomNavigationAction
               label="Profile"
               icon={<AccountCircleIcon />}
-              onClick={() => navigate(`/volunteer-profile/${volunteerData.id}`)}
+              onClick={() =>
+                navigate(`/app/volunteer-profile/${volunteerData.id}`)
+              }
             />
           </BottomNavigation>
         </Paper>

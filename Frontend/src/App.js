@@ -1,9 +1,10 @@
-import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import theme from "./theme";
+import LoadingScreen from "./components/LoadingScreen";
 
 // Layout
 import Layout from "./components/Layout/Layout";
@@ -41,13 +42,28 @@ const ProtectedRoute = ({ children, requiredRoles = [] }) => {
     // Not logged in
     return <Navigate to="/login" replace />;
   }
-
   if (requiredRoles.length > 0 && !requiredRoles.includes(currentUser.role)) {
     // User doesn't have required role
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/app/volunteer-dashboard" replace />;
   }
 
   return children;
+};
+
+// This component shows a loading screen and then redirects to driver-login
+const RedirectToDriverLogin = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Show loading screen for 1.5 seconds before redirecting
+    const timer = setTimeout(() => {
+      navigate("/driver-login", { replace: true });
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [navigate]);
+
+  return <LoadingScreen />;
 };
 
 function App() {
@@ -57,7 +73,9 @@ function App() {
       <AuthProvider>
         {" "}
         <Routes>
-          <Route path="/login" element={<Login />} />
+          {/* Make driver-login the default route with a loading screen */}
+          <Route path="/" element={<RedirectToDriverLogin />} />
+          <Route path="/login" element={<DriverLogin />} />
           <Route path="/driver-login" element={<DriverLogin />} />
           {/* Redirect old volunteer-login to new driver-login for backwards compatibility */}
           <Route
@@ -72,30 +90,38 @@ function App() {
 
           {/* Protected Routes */}
           <Route
-            path="/"
+            path="/app"
             element={
               <ProtectedRoute>
                 <Layout />
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route
+              index
+              element={<Navigate to="/app/volunteer-dashboard" replace />}
+            />{" "}
             <Route path="dashboard" element={<Dashboard />} />{" "}
             <Route
               path="volunteer-dashboard"
               element={
-                <ProtectedRoute requiredRoles={["Volunteer"]}>
+                <ProtectedRoute requiredRoles={["Volunteer", "Driver"]}>
                   <DriverDashboard />
                 </ProtectedRoute>
               }
             />
             <Route path="calendar" element={<Calendar />} />
-            {/* Route Map Pages */}
+            {/* Route Map Pages */}{" "}
             <Route
               path="route-map/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <RouteMap />
                 </ProtectedRoute>
@@ -106,7 +132,12 @@ function App() {
               path="volunteer-delivery/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <DeliveryDetails />
                 </ProtectedRoute>
@@ -117,7 +148,12 @@ function App() {
               path="delivery-navigation/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <DeliveryNavigation />
                 </ProtectedRoute>
@@ -128,7 +164,12 @@ function App() {
               path="incident-report/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <IncidentReport />
                 </ProtectedRoute>
@@ -139,7 +180,12 @@ function App() {
               path="scan-qr-code/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <BarcodeScan />
                 </ProtectedRoute>
@@ -150,7 +196,12 @@ function App() {
               path="delivery-complete/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <DeliveryComplete />
                 </ProtectedRoute>
@@ -161,7 +212,12 @@ function App() {
               path="delivery-confirmation/:deliveryId"
               element={
                 <ProtectedRoute
-                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                  requiredRoles={[
+                    "Volunteer",
+                    "Driver",
+                    "Admin",
+                    "Coordinator",
+                  ]}
                 >
                   <DeliveryConfirmation />
                 </ProtectedRoute>

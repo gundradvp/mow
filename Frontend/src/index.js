@@ -8,6 +8,8 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import theme from "./theme";
+// Import our axios configuration
+import "./utils/axiosConfig";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(

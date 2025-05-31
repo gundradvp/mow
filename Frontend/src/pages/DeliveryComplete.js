@@ -218,10 +218,8 @@ const DeliveryComplete = () => {
         photoCount: photos.length,
       });
 
-      setLoading(false);
-
-      // Navigate to confirmation page
-      navigate(`/delivery-confirmation/${deliveryId}`, {
+      setLoading(false); // Navigate to confirmation page
+      navigate(`/app/delivery-confirmation/${deliveryId}`, {
         state: {
           deliveryCompleted: true,
           deliveryDetails,

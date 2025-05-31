@@ -34,27 +34,32 @@ const DriverLogin = () => {
   const navigate = useNavigate();
   const location = useLocation();
   // Check if there's a redirect path in the location state
-  const from = location.state?.from?.pathname || "/volunteer-dashboard"; // Keeping dashboard route the same
-
+  const from = location.state?.from?.pathname || "/app/volunteer-dashboard"; // Updated path for driver dashboard
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      // Use the AuthContext login function instead of direct axios call
-      const userData = await login(username, password); // Redirect user based on their role
-      if (userData.role === "Volunteer") {
-        // Drivers/Captains are still using the Volunteer role in the backend
-        navigate("/volunteer-dashboard");
+      // Use the AuthContext login function with static values
+      const userData = await login(username, password); // Redirect user based on their role - default to driver dashboard
+      if (userData.role === "Driver") {
+        // Drivers/Captains have their own role now
+        navigate("/app/volunteer-dashboard");
+      } else if (userData.role === "Volunteer") {
+        // For backward compatibility, volunteers still go to the same dashboard
+        navigate("/app/volunteer-dashboard");
+      } else if (userData.role === "Admin" || userData.role === "Coordinator") {
+        // Only if explicitly needed, redirect admin/coordinator to their dashboard
+        navigate("/app/dashboard");
       } else {
-        navigate("/dashboard");
+        // Default - send to driver dashboard
+        navigate("/app/volunteer-dashboard");
       }
     } catch (err) {
       console.error("Login error:", err);
       setError(
-        err.response?.data ||
-          "An error occurred during login. Please try again."
+        err.message || "Invalid username or password. Please try again."
       );
     } finally {
       setLoading(false);
@@ -63,13 +68,11 @@ const DriverLogin = () => {
 
   const handleTogglePassword = () => {
     setShowPassword(!showPassword);
-  };
-  // Demo driver login for testing purposes
+  }; // Demo driver login for testing purposes
   const handleDemoLogin = () => {
     setUsername("driver1");
     setPassword("Password123!");
-    // We keep the same username for compatibility with existing backend,
-    // but we've changed the UI to reflect driver/captain terminology
+    // This will use the Driver role we set up in AuthContext
   };
 
   return (
@@ -93,13 +96,17 @@ const DriverLogin = () => {
           }}
         >
           <Box sx={{ mb: 3, textAlign: "center" }}>
+            {" "}
             <Typography
               component="h1"
               variant="h4"
               fontWeight="bold"
               color="primary"
             >
-              Captain/Driver Portal
+              Meals On Wheels
+            </Typography>
+            <Typography variant="h6" color="secondary" sx={{ mt: 1 }}>
+              Driver Portal
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
               Sign in to access your delivery account

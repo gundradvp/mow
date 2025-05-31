@@ -95,14 +95,17 @@ function Layout() {
       {
         text: "Dashboard",
         icon: <DashboardIcon />,
-        path: currentUser?.role === "Volunteer" ? "/volunteer-dashboard" : "/dashboard",
-        roles: ["Admin", "Coordinator", "Volunteer"],
+        path:
+          currentUser?.role === "Volunteer" || currentUser?.role === "Driver"
+            ? "/app/volunteer-dashboard"
+            : "/app/dashboard",
+        roles: ["Admin", "Coordinator", "Volunteer", "Driver"],
       },
       {
         text: "Calendar",
         icon: <CalendarMonthIcon />,
-        path: "/calendar",
-        roles: ["Admin", "Coordinator", "Volunteer"],
+        path: "/app/calendar",
+        roles: ["Admin", "Coordinator", "Volunteer", "Driver"],
       },
     ];
 
@@ -131,18 +134,17 @@ function Layout() {
           roles: ["Admin", "Coordinator"],
         }
       );
-    }
-
-    // Add volunteer-specific items
-    if (currentUser && currentUser.role === "Volunteer") {
-      items.push(
-        {
-          text: "Routes",
-          icon: <RouteIcon />,
-          path: "/volunteer-routes",
-          roles: ["Volunteer"],
-        }
-      );
+    } // Add volunteer/driver-specific items
+    if (
+      currentUser &&
+      (currentUser.role === "Volunteer" || currentUser.role === "Driver")
+    ) {
+      items.push({
+        text: "My Routes",
+        icon: <RouteIcon />,
+        path: "/app/volunteer-routes",
+        roles: ["Volunteer", "Driver"],
+      });
     }
 
     // Filter items based on user role
@@ -154,8 +156,8 @@ function Layout() {
   // Determine if we should hide the drawer for volunteer dashboard on mobile
   const isVolunteerDashboardOnMobile = () => {
     return (
-      currentUser?.role === "Volunteer" && 
-      location.pathname === "/volunteer-dashboard" && 
+      currentUser?.role === "Volunteer" &&
+      location.pathname === "/volunteer-dashboard" &&
       isMobile
     );
   };
@@ -163,13 +165,13 @@ function Layout() {
   // Drawer content
   const drawerContent = (
     <>
-      <Toolbar 
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'flex-end', 
+      <Toolbar
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
           px: [1],
-          minHeight: (theme) => theme.spacing(7)
+          minHeight: (theme) => theme.spacing(7),
         }}
       >
         <IconButton onClick={toggleDrawer}>
@@ -215,7 +217,10 @@ function Layout() {
                 primary={item.text}
                 sx={{
                   opacity: open ? 1 : 0,
-                  display: { xs: mobileOpen ? 'block' : 'none', sm: open ? 'block' : 'none' },
+                  display: {
+                    xs: mobileOpen ? "block" : "none",
+                    sm: open ? "block" : "none",
+                  },
                   color:
                     location.pathname === item.path
                       ? "primary.main"
@@ -238,8 +243,8 @@ function Layout() {
     <Box sx={{ display: "flex" }}>
       <AppBar
         position="fixed"
-        sx={{ 
-          zIndex: (theme) => theme.zIndex.drawer + 1 
+        sx={{
+          zIndex: (theme) => theme.zIndex.drawer + 1,
         }}
       >
         <Toolbar>
@@ -321,10 +326,10 @@ function Layout() {
             keepMounted: true, // Better mobile performance
           }}
           sx={{
-            display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { 
-              boxSizing: 'border-box', 
-              width: drawerWidth 
+            display: { xs: "block", sm: "none" },
+            "& .MuiDrawer-paper": {
+              boxSizing: "border-box",
+              width: drawerWidth,
             },
           }}
         >
@@ -337,7 +342,7 @@ function Layout() {
         <Drawer
           variant="permanent"
           sx={{
-            display: { xs: 'none', sm: 'block' },
+            display: { xs: "none", sm: "block" },
             width: open ? drawerWidth : theme.spacing(7),
             flexShrink: 0,
             [`& .MuiDrawer-paper`]: {
@@ -356,13 +361,13 @@ function Layout() {
         </Drawer>
       )}
 
-      <Box 
-        component="main" 
-        sx={{ 
-          flexGrow: 1, 
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
           p: 3,
           mt: { xs: 7, sm: 8 },
-          width: '100%'
+          width: "100%",
         }}
       >
         <Toolbar />

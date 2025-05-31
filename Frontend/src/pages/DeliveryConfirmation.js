@@ -77,14 +77,13 @@ const DeliveryConfirmation = () => {
       // No specific cleanup needed for confetti
     };
   }, [theme.palette.primary.main, theme.palette.success.main]);
-
   const handleBackToHome = () => {
-    navigate("/volunteer-dashboard");
+    navigate("/app/volunteer-dashboard");
   };
 
   const handleNextDelivery = () => {
     // Navigate to the next delivery if available, otherwise go to dashboard
-    navigate("/volunteer-dashboard", {
+    navigate("/app/volunteer-dashboard", {
       state: { checkForNextDelivery: true },
     });
   };
@@ -250,22 +249,22 @@ const DeliveryConfirmation = () => {
             <BottomNavigationAction
               label="Home"
               icon={<HomeIcon />}
-              onClick={() => navigate("/volunteer-dashboard")}
+              onClick={() => navigate("/app/volunteer-dashboard")}
             />
             <BottomNavigationAction
               label="Schedule"
               icon={<ScheduleIcon />}
-              onClick={() => navigate("/volunteer-schedule")}
+              onClick={() => navigate("/app/volunteer-schedule")}
             />
             <BottomNavigationAction
               label="Routes"
               icon={<MapIcon />}
-              onClick={() => navigate("/volunteer-routes")}
+              onClick={() => navigate("/app/volunteer-routes")}
             />
             <BottomNavigationAction
               label="Profile"
               icon={<AccountCircleIcon />}
-              onClick={() => navigate("/volunteer-profile")}
+              onClick={() => navigate("/app/volunteer-profile")}
             />
           </BottomNavigation>
         </Paper>

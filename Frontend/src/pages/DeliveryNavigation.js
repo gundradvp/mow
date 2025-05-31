@@ -251,15 +251,14 @@ const DeliveryNavigation = () => {
     // In a real app, this would open a messaging interface
     alert(`Messaging driver: ${driverInfo.phone}`);
   };
-
   const handleNoResponse = () => {
     // Navigate to the incident report page with the current delivery ID
-    navigate(`/incident-report/${deliveryId}`);
+    navigate(`/app/incident-report/${deliveryId}`);
   };
 
   const handleProceedToCheckout = () => {
     // Navigate to the QR code scanning page with the current delivery ID
-    navigate(`/scan-qr-code/${deliveryId}`);
+    navigate(`/app/scan-qr-code/${deliveryId}`);
   };
 
   if (loading) {
@@ -483,25 +482,26 @@ const DeliveryNavigation = () => {
             }}
             showLabels
           >
+            {" "}
             <BottomNavigationAction
               label="Home"
               icon={<HomeIcon />}
-              onClick={() => navigate("/volunteer-dashboard")}
+              onClick={() => navigate("/app/volunteer-dashboard")}
             />
             <BottomNavigationAction
               label="Schedule"
               icon={<ScheduleIcon />}
-              onClick={() => navigate("/volunteer-schedule")}
-            />
+              onClick={() => navigate("/app/volunteer-schedule")}
+            />{" "}
             <BottomNavigationAction
               label="Routes"
               icon={<MapIcon />}
-              onClick={() => navigate("/volunteer-routes")}
+              onClick={() => navigate("/app/volunteer-routes")}
             />
             <BottomNavigationAction
               label="Profile"
               icon={<AccountCircleIcon />}
-              onClick={() => navigate("/volunteer-profile")}
+              onClick={() => navigate("/app/volunteer-profile")}
             />
           </BottomNavigation>
         </Paper>

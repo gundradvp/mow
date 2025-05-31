@@ -463,7 +463,7 @@ const RouteMap = () => {
 
   const handleStartNavigation = () => {
     // Navigate to the delivery navigation page for the selected delivery
-    navigate(`/delivery-navigation/${currentOrder.id}`);
+    navigate(`/app/delivery-navigation/${currentOrder.id}`);
   };
 
   const handleOpenLoadingSheet = () => {
@@ -736,22 +736,22 @@ const RouteMap = () => {
             <BottomNavigationAction
               label="Home"
               icon={<HomeIcon />}
-              onClick={() => navigate("/volunteer-dashboard")}
+              onClick={() => navigate("/app/volunteer-dashboard")}
             />
             <BottomNavigationAction
               label="Schedule"
               icon={<ScheduleIcon />}
-              onClick={() => navigate("/volunteer-schedule")}
+              onClick={() => navigate("/app/volunteer-schedule")}
             />
             <BottomNavigationAction
               label="Routes"
               icon={<MapIcon />}
-              onClick={() => navigate("/volunteer-routes")}
+              onClick={() => navigate("/app/volunteer-routes")}
             />
             <BottomNavigationAction
               label="Profile"
               icon={<AccountCircleIcon />}
-              onClick={() => navigate("/volunteer-profile")}
+              onClick={() => navigate("/app/volunteer-profile")}
             />
           </BottomNavigation>
         </Paper>
