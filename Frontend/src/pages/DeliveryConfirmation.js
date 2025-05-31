@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Container,
@@ -9,11 +9,18 @@ import {
   Toolbar,
   Paper,
   useTheme,
+  useMediaQuery,
+  BottomNavigation,
+  BottomNavigationAction,
 } from "@mui/material";
 import {
   ArrowBack as ArrowBackIcon,
   CheckCircle as CheckCircleIcon,
   LocalShipping as LocalShippingIcon,
+  Home as HomeIcon,
+  Schedule as ScheduleIcon,
+  Map as MapIcon,
+  AccountCircle as AccountCircleIcon,
 } from "@mui/icons-material";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import confetti from "canvas-confetti";
@@ -23,6 +30,8 @@ const DeliveryConfirmation = () => {
   const navigate = useNavigate();
   const { deliveryId } = useParams();
   const location = useLocation();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [navValue, setNavValue] = useState(2); // Set to "Routes" tab by default
 
   const deliveryDetails = location.state?.deliveryDetails || {
     clientName: "John Doe",
@@ -144,7 +153,6 @@ const DeliveryConfirmation = () => {
             The meal has been delivered and verified with OTP and photos.
           </Typography>
         </Box>
-
         {/* Delivery details summary */}
         <Paper
           elevation={1}
@@ -185,10 +193,17 @@ const DeliveryConfirmation = () => {
             </Typography>
             <Typography variant="body1">{deliveryDetails.time}</Typography>
           </Box>
-        </Paper>
-
+        </Paper>{" "}
         {/* Action buttons */}
-        <Box sx={{ mt: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box
+          sx={{
+            mt: 4,
+            mb: isMobile ? 12 : 2,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
           <Button
             variant="contained"
             color="primary"
@@ -199,7 +214,6 @@ const DeliveryConfirmation = () => {
           >
             Proceed to Next Delivery
           </Button>
-
           <Button
             variant="outlined"
             color="primary"
@@ -212,6 +226,50 @@ const DeliveryConfirmation = () => {
           </Button>
         </Box>
       </Container>
+
+      {/* Fixed bottom navigation for mobile */}
+      {isMobile && (
+        <Paper
+          sx={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            pb: 1, // Add padding to account for iPhone home bar
+          }}
+          elevation={3}
+        >
+          <BottomNavigation
+            value={navValue}
+            onChange={(event, newValue) => {
+              setNavValue(newValue);
+            }}
+            showLabels
+          >
+            <BottomNavigationAction
+              label="Home"
+              icon={<HomeIcon />}
+              onClick={() => navigate("/volunteer-dashboard")}
+            />
+            <BottomNavigationAction
+              label="Schedule"
+              icon={<ScheduleIcon />}
+              onClick={() => navigate("/volunteer-schedule")}
+            />
+            <BottomNavigationAction
+              label="Routes"
+              icon={<MapIcon />}
+              onClick={() => navigate("/volunteer-routes")}
+            />
+            <BottomNavigationAction
+              label="Profile"
+              icon={<AccountCircleIcon />}
+              onClick={() => navigate("/volunteer-profile")}
+            />
+          </BottomNavigation>
+        </Paper>
+      )}
     </Box>
   );
 };

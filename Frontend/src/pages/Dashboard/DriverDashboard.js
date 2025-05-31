@@ -555,34 +555,36 @@ const DriverDashboard = () => {
                     >
                       {delivery.items.length} food items
                     </Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "center", mt: 1 }}>
-                    <CalendarIcon
-                      fontSize="small"
-                      color="action"
-                      sx={{ mr: 1 }}
-                    />
-                    <Typography variant="body2" color="text.secondary">
-                      {formatDate(delivery.date)} • {delivery.time}
-                    </Typography>
-                  </Box>
-                </CardContent>{" "}
-                <CardActions
-                  sx={{
-                    justifyContent: "flex-end",
-                    px: isMobile ? 1.5 : 2,
-                    pb: isMobile ? 1.5 : 2,
-                  }}
-                >
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => handleViewDetails(delivery.id)}
-                    endIcon={<ArrowForwardIcon />}
+                  </Box>{" "}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      mt: 1,
+                    }}
                   >
-                    View Details
-                  </Button>
-                </CardActions>
+                    <Box sx={{ display: "flex", alignItems: "center" }}>
+                      <CalendarIcon
+                        fontSize="small"
+                        color="action"
+                        sx={{ mr: 1 }}
+                      />
+                      <Typography variant="body2" color="text.secondary">
+                        {formatDate(delivery.date)} • {delivery.time}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleViewDetails(delivery.id)}
+                      endIcon={<ArrowForwardIcon />}
+                      sx={{ ml: 2, minWidth: "auto" }}
+                    >
+                      Details
+                    </Button>
+                  </Box>
+                </CardContent>
               </Card>
             ))}{" "}
             {/* Route loading status indicator */}

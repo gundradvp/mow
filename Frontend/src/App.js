@@ -11,7 +11,7 @@ import Layout from "./components/Layout/Layout";
 // Pages
 import Login from "./pages/Auth/Login";
 import Register from "./pages/Auth/Register";
-import VolunteerLogin from "./pages/Auth/VolunteerLogin";
+import DriverLogin from "./pages/Auth/DriverLogin";
 import VolunteerRegistration from "./pages/Auth/VolunteerRegistration";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Calendar from "./pages/Calendar/Calendar";
@@ -24,9 +24,10 @@ import VolunteerList from "./pages/VolunteerList";
 import VolunteerDetail from "./pages/VolunteerDetail";
 import VolunteerForm from "./pages/VolunteerForm";
 import VolunteerSchedule from "./pages/VolunteerSchedule";
-import VolunteerDashboard from "./pages/Dashboard/VolunteerDashboard";
+import DriverDashboard from "./pages/Dashboard/DriverDashboard";
 import RouteMap from "./pages/RouteMap";
 import DeliveryNavigation from "./pages/DeliveryNavigation";
+import DeliveryDetails from "./pages/DeliveryDetails";
 import IncidentReport from "./pages/IncidentReport";
 import BarcodeScan from "./pages/BarcodeScan";
 import DeliveryComplete from "./pages/DeliveryComplete";
@@ -54,9 +55,15 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
+        {" "}
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/volunteer-login" element={<VolunteerLogin />} />
+          <Route path="/driver-login" element={<DriverLogin />} />
+          {/* Redirect old volunteer-login to new driver-login for backwards compatibility */}
+          <Route
+            path="/volunteer-login"
+            element={<Navigate to="/driver-login" replace />}
+          />
           <Route
             path="/volunteer-registration"
             element={<VolunteerRegistration />}
@@ -73,17 +80,16 @@ function App() {
             }
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />{" "}
             <Route
               path="volunteer-dashboard"
               element={
                 <ProtectedRoute requiredRoles={["Volunteer"]}>
-                  <VolunteerDashboard />
+                  <DriverDashboard />
                 </ProtectedRoute>
               }
             />
             <Route path="calendar" element={<Calendar />} />
-
             {/* Route Map Pages */}
             <Route
               path="route-map/:deliveryId"
@@ -94,8 +100,18 @@ function App() {
                   <RouteMap />
                 </ProtectedRoute>
               }
+            />{" "}
+            {/* Delivery Details Page */}
+            <Route
+              path="volunteer-delivery/:deliveryId"
+              element={
+                <ProtectedRoute
+                  requiredRoles={["Volunteer", "Admin", "Coordinator"]}
+                >
+                  <DeliveryDetails />
+                </ProtectedRoute>
+              }
             />
-
             {/* Delivery Navigation Page */}
             <Route
               path="delivery-navigation/:deliveryId"
@@ -107,7 +123,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             {/* Incident Report Page */}
             <Route
               path="incident-report/:deliveryId"
@@ -119,7 +134,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             {/* QR Code Scanning Page */}
             <Route
               path="scan-qr-code/:deliveryId"
@@ -131,7 +145,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             {/* Delivery Complete Page */}
             <Route
               path="delivery-complete/:deliveryId"
@@ -143,7 +156,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             {/* Delivery Confirmation Page */}
             <Route
               path="delivery-confirmation/:deliveryId"
@@ -155,7 +167,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             {/* Admin Routes */}
             <Route
               path="volunteers"
@@ -181,7 +192,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             {/* Volunteer Routes */}
             <Route
               path="volunteer-list"

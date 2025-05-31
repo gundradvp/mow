@@ -25,6 +25,13 @@ import {
   StepLabel,
   StepButton,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Checkbox,
+  BottomNavigation,
+  BottomNavigationAction,
 } from "@mui/material";
 import {
   ArrowBack as ArrowBackIcon,
@@ -39,7 +46,11 @@ import {
   FiberManualRecord as DotIcon,
   Restaurant as FoodIcon,
   Home as HomeIcon,
+  CheckCircle as CheckCircleIcon,
+  AccountCircle as AccountCircleIcon,
+  Schedule as ScheduleIcon,
 } from "@mui/icons-material";
+import DriverLoadingSheet from "../components/Driver/DriverLoadingSheet";
 import { useTheme } from "@mui/material/styles";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -284,7 +295,7 @@ const OrderProgressTracker = ({ totalStops, currentStop, onSelectStop }) => {
           mb: 1,
         }}
       >
-        {Array.from({ length: 8 }).map((_, index) => {
+        {Array.from({ length: totalStops }).map((_, index) => {
           const stopNumber = index + 1;
           const isActive = stopNumber <= totalStops;
           const isCurrent = stopNumber === currentStop;
@@ -339,12 +350,15 @@ const RouteMap = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-
+  const [navValue, setNavValue] = useState(2); // Set to "Routes" tab by default
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
   const [selectedStop, setSelectedStop] = useState(1);
   const [currentOrder, setCurrentOrder] = useState(null);
+  const [loadingSheetOpen, setLoadingSheetOpen] = useState(false);
+  const [routeLoadingStatus, setRouteLoadingStatus] = useState("Not Started");
+  const [loadingPercentage, setLoadingPercentage] = useState(0);
 
   useEffect(() => {
     // In a real application, you would fetch data from an API
@@ -425,7 +439,7 @@ const RouteMap = () => {
 
         setDeliveries(mockDeliveries);
 
-        // Set the initial selected order
+        // Set the initial selected order          // For "all" route, show all stops and start with the first one
         const initialStop = deliveryId === "all" ? 1 : parseInt(deliveryId, 10);
         const selectedDelivery =
           mockDeliveries.find((d) => d.stopNumber === initialStop) ||
@@ -443,7 +457,6 @@ const RouteMap = () => {
 
     loadData();
   }, [deliveryId]);
-
   const handleBack = () => {
     navigate(-1);
   };
@@ -451,6 +464,27 @@ const RouteMap = () => {
   const handleStartNavigation = () => {
     // Navigate to the delivery navigation page for the selected delivery
     navigate(`/delivery-navigation/${currentOrder.id}`);
+  };
+
+  const handleOpenLoadingSheet = () => {
+    setLoadingSheetOpen(true);
+  };
+
+  const handleCloseLoadingSheet = () => {
+    setLoadingSheetOpen(false);
+  };
+
+  const handleLoadStatusChange = (status, percentage) => {
+    setRouteLoadingStatus(status);
+    setLoadingPercentage(percentage);
+  };
+  // Check if this is a specific route that should bypass the loading process
+  const shouldSkipLoadingProcess = () => {
+    return (
+      deliveryId === "ST7890QR14" ||
+      deliveryId.includes("ST7890QR14") ||
+      deliveryId === "all"
+    );
   };
 
   const handleSelectStop = (stopNumber) => {
@@ -515,7 +549,6 @@ const RouteMap = () => {
           </IconButton>
         </Toolbar>
       </AppBar>
-
       {/* Map Visualization */}
       <Box sx={{ bgcolor: "#f0f4f8", pt: 0, pb: 1 }}>
         <RouteMapSimulation
@@ -525,7 +558,6 @@ const RouteMap = () => {
           onSelectStop={handleSelectStop}
         />
       </Box>
-
       {/* Order Progress Tracker */}
       <Container maxWidth="lg" sx={{ mt: 1 }}>
         <OrderProgressTracker
@@ -534,7 +566,6 @@ const RouteMap = () => {
           onSelectStop={handleSelectStop}
         />
       </Container>
-
       {/* Current Order Card */}
       {currentOrder && (
         <Container maxWidth="lg">
@@ -618,26 +649,112 @@ const RouteMap = () => {
                   </Box>
                 ))}
               </Box>
-            </CardContent>
-          </Card>
+            </CardContent>{" "}
+          </Card>{" "}
+          {/* Action buttons */}
+          <Box sx={{ display: "flex", gap: 2, mt: 3, mb: isMobile ? 12 : 2 }}>
+            {!shouldSkipLoadingProcess() &&
+              routeLoadingStatus !== "Fully Loaded" && (
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={handleOpenLoadingSheet}
+                  sx={{
+                    py: 1.2,
+                    borderRadius: 1,
+                    fontSize: "1rem",
+                    flex: 1,
+                  }}
+                >
+                  {routeLoadingStatus === "Not Started"
+                    ? "Load Items"
+                    : "Complete Loading"}
+                </Button>
+              )}
 
-          {/* Start/Navigation button */}
-          <Button
-            variant="contained"
-            color="primary"
-            fullWidth
-            size="large"
-            onClick={handleStartNavigation}
-            sx={{
-              py: 1.2,
-              borderRadius: 1,
-              fontSize: "1rem",
-              textTransform: "none",
-            }}
-          >
-            Start
-          </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              fullWidth
+              size="large"
+              onClick={handleStartNavigation}
+              disabled={
+                !shouldSkipLoadingProcess() &&
+                routeLoadingStatus !== "Fully Loaded"
+              }
+              sx={{
+                py: 1.2,
+                borderRadius: 1,
+                fontSize: "1rem",
+                textTransform: "none",
+                flex:
+                  shouldSkipLoadingProcess() ||
+                  routeLoadingStatus === "Fully Loaded"
+                    ? 1
+                    : 2,
+              }}
+            >
+              {shouldSkipLoadingProcess()
+                ? "Start Delivery"
+                : routeLoadingStatus === "Fully Loaded"
+                ? "Start Delivery"
+                : "Delivery Ready"}
+            </Button>
+          </Box>
         </Container>
+      )}{" "}
+      {/* Loading Sheet Dialog - Only shown for routes that require loading */}{" "}
+      {!shouldSkipLoadingProcess() && (
+        <DriverLoadingSheet
+          open={loadingSheetOpen}
+          onClose={handleCloseLoadingSheet}
+          routeNumber="R-452"
+          deliveries={deliveries}
+          onLoadStatusChange={handleLoadStatusChange}
+        />
+      )}
+      {/* Fixed bottom navigation for mobile */}
+      {isMobile && (
+        <Paper
+          sx={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            pb: 1, // Add padding to account for iPhone home bar
+          }}
+          elevation={3}
+        >
+          <BottomNavigation
+            value={navValue}
+            onChange={(event, newValue) => {
+              setNavValue(newValue);
+            }}
+            showLabels
+          >
+            <BottomNavigationAction
+              label="Home"
+              icon={<HomeIcon />}
+              onClick={() => navigate("/volunteer-dashboard")}
+            />
+            <BottomNavigationAction
+              label="Schedule"
+              icon={<ScheduleIcon />}
+              onClick={() => navigate("/volunteer-schedule")}
+            />
+            <BottomNavigationAction
+              label="Routes"
+              icon={<MapIcon />}
+              onClick={() => navigate("/volunteer-routes")}
+            />
+            <BottomNavigationAction
+              label="Profile"
+              icon={<AccountCircleIcon />}
+              onClick={() => navigate("/volunteer-profile")}
+            />
+          </BottomNavigation>
+        </Paper>
       )}
     </Box>
   );

@@ -14,6 +14,9 @@ import {
   Divider,
   Avatar,
   Grid,
+  Paper,
+  BottomNavigation,
+  BottomNavigationAction,
 } from "@mui/material";
 import {
   ArrowBack as ArrowBackIcon,
@@ -25,6 +28,9 @@ import {
   Home as HomeIcon,
   TwoWheeler as ScooterIcon,
   WarningAmber as WarningIcon,
+  Schedule as ScheduleIcon,
+  Map as MapIcon,
+  AccountCircle as AccountCircleIcon,
 } from "@mui/icons-material";
 import { useTheme } from "@mui/material/styles";
 import { useNavigate, useParams } from "react-router-dom";
@@ -181,6 +187,7 @@ const DeliveryNavigation = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [navValue, setNavValue] = useState(2); // Set to "Routes" tab by default
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -360,7 +367,6 @@ const DeliveryNavigation = () => {
             </IconButton>
           </Box>
         </Box>
-
         {/* ETA */}
         <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
           <TimeIcon color="primary" sx={{ mr: 1 }} />
@@ -368,9 +374,7 @@ const DeliveryNavigation = () => {
             ETA: {delivery.eta}
           </Typography>
         </Box>
-
         <Divider sx={{ my: 2 }} />
-
         {/* Addresses */}
         <Box sx={{ mb: 2 }}>
           {/* Origin */}
@@ -430,10 +434,9 @@ const DeliveryNavigation = () => {
               </Typography>
             </Box>
           </Box>
-        </Box>
-
+        </Box>{" "}
         {/* Action Buttons */}
-        <Grid container spacing={2} sx={{ mt: 4 }}>
+        <Grid container spacing={2} sx={{ mt: 4, mb: isMobile ? 12 : 2 }}>
           <Grid item xs={6}>
             <Button
               variant="contained"
@@ -459,6 +462,50 @@ const DeliveryNavigation = () => {
           </Grid>
         </Grid>
       </Container>
+
+      {/* Fixed bottom navigation for mobile */}
+      {isMobile && (
+        <Paper
+          sx={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            pb: 1, // Add padding to account for iPhone home bar
+          }}
+          elevation={3}
+        >
+          <BottomNavigation
+            value={navValue}
+            onChange={(event, newValue) => {
+              setNavValue(newValue);
+            }}
+            showLabels
+          >
+            <BottomNavigationAction
+              label="Home"
+              icon={<HomeIcon />}
+              onClick={() => navigate("/volunteer-dashboard")}
+            />
+            <BottomNavigationAction
+              label="Schedule"
+              icon={<ScheduleIcon />}
+              onClick={() => navigate("/volunteer-schedule")}
+            />
+            <BottomNavigationAction
+              label="Routes"
+              icon={<MapIcon />}
+              onClick={() => navigate("/volunteer-routes")}
+            />
+            <BottomNavigationAction
+              label="Profile"
+              icon={<AccountCircleIcon />}
+              onClick={() => navigate("/volunteer-profile")}
+            />
+          </BottomNavigation>
+        </Paper>
+      )}
     </Box>
   );
 };

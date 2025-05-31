@@ -173,7 +173,7 @@ const VolunteerRegistration = () => {
 
       // Redirect to login page after 3 seconds
       setTimeout(() => {
-        navigate("/volunteer-login");
+        navigate("/driver-login");
       }, 3000);
     } catch (err) {
       console.error("Registration error:", err);
@@ -663,7 +663,7 @@ const VolunteerRegistration = () => {
           <Button
             variant="contained"
             color="primary"
-            onClick={() => navigate("/volunteer-login")}
+            onClick={() => navigate("/driver-login")}
           >
             Go to Login
           </Button>
@@ -729,7 +729,7 @@ const VolunteerRegistration = () => {
             Already have an account?{" "}
             <Link
               component={RouterLink}
-              to="/volunteer-login"
+              to="/driver-login"
               variant="body2"
               color="primary"
             >
